@@ -15,15 +15,72 @@
 // limitations under the License.
 
 use binrw::{binrw, io::Cursor, BinRead, BinWrite};
+use modular_bitfield::prelude::*;
+use std::borrow::Cow;
+use std::ffi::CStr;
 
 pub const FILE_IDENTIFIER: u32 = 0x12349876;
 pub const HEADER_DATA_SIZE: u32 = 28;
 pub const PADDED_SIZE_MULTIPLICAND: u32 = 4096;
 
 pub const DATA_SIZE: usize = 132;
-pub const PARTITION_NAME_MAX_LENGTH: usize = 32;
-pub const FLASH_FILENAME_MAX_LENGTH: usize = 32;
-pub const FOTA_FILENAME_MAX_LENGTH: usize = 32;
+pub const PARTITION_NAM_LENGTH: usize = 32;
+pub const FLASH_FILENAME_LENGTH: usize = 32;
+pub const FOTA_FILENAME_LENGTH: usize = 32;
+
+#[derive(BinRead, BinWrite, Debug, Clone, PartialEq, Eq)]
+pub struct FixedString<const LEN: usize> {
+    pub data: [u8; LEN],
+}
+
+impl<const LEN: usize> FixedString<LEN> {
+    pub fn to_string_lossy(&self) -> Cow<'_, str> {
+        match CStr::from_bytes_until_nul(&self.data) {
+            Ok(cstr) => cstr.to_string_lossy(),
+            Err(_) => String::from_utf8_lossy(&self.data),
+        }
+    }
+}
+
+impl<const LEN: usize> Default for FixedString<LEN> {
+    fn default() -> Self {
+        Self { data: [0u8; LEN] }
+    }
+}
+
+impl<const LEN: usize> std::fmt::Display for FixedString<LEN> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string_lossy())
+    }
+}
+
+impl<const LEN: usize> PartialEq<&str> for FixedString<LEN> {
+    fn eq(&self, other: &&str) -> bool {
+        self.to_string_lossy() == *other
+    }
+}
+
+#[bitfield(bits = 32)]
+#[derive(BinRead, BinWrite, Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[br(map = |x: u32| Self::from_bytes(x.to_le_bytes()))]
+#[bw(map = |x: &Self| u32::from_le_bytes(x.into_bytes()))]
+pub struct Attribute {
+    pub write: bool,
+    pub stl: bool,
+    #[skip]
+    __: B30,
+}
+
+#[bitfield(bits = 32)]
+#[derive(BinRead, BinWrite, Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[br(map = |x: u32| Self::from_bytes(x.to_le_bytes()))]
+#[bw(map = |x: &Self| u32::from_le_bytes(x.into_bytes()))]
+pub struct UpdateAttribute {
+    pub fota: bool,
+    pub secure: bool,
+    #[skip]
+    __: B30,
+}
 
 #[binrw]
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -32,39 +89,15 @@ pub struct PitEntry {
     pub binary_type: u32,
     pub device_type: u32,
     pub identifier: u32,
-    pub attributes: u32,
-    pub update_attributes: u32,
+    pub attributes: Attribute,
+    pub update_attributes: UpdateAttribute,
     pub block_size_or_offset: u32,
     pub block_count: u32,
     pub file_offset: u32,
     pub file_size: u32,
-    #[br(map = |x: [u8; PARTITION_NAME_MAX_LENGTH]| String::from_utf8_lossy(&x).trim_matches('\0').to_string())]
-    #[bw(map = |x: &String| {
-        let mut buf = [0u8; PARTITION_NAME_MAX_LENGTH];
-        let bytes = x.as_bytes();
-        let len = std::cmp::min(bytes.len(), PARTITION_NAME_MAX_LENGTH);
-        buf[..len].copy_from_slice(&bytes[..len]);
-        buf
-    })]
-    pub partition_name: String,
-    #[br(map = |x: [u8; FLASH_FILENAME_MAX_LENGTH]| String::from_utf8_lossy(&x).trim_matches('\0').to_string())]
-    #[bw(map = |x: &String| {
-        let mut buf = [0u8; FLASH_FILENAME_MAX_LENGTH];
-        let bytes = x.as_bytes();
-        let len = std::cmp::min(bytes.len(), FLASH_FILENAME_MAX_LENGTH);
-        buf[..len].copy_from_slice(&bytes[..len]);
-        buf
-    })]
-    pub flash_filename: String,
-    #[br(map = |x: [u8; FOTA_FILENAME_MAX_LENGTH]| String::from_utf8_lossy(&x).trim_matches('\0').to_string())]
-    #[bw(map = |x: &String| {
-        let mut buf = [0u8; FOTA_FILENAME_MAX_LENGTH];
-        let bytes = x.as_bytes();
-        let len = std::cmp::min(bytes.len(), FOTA_FILENAME_MAX_LENGTH);
-        buf[..len].copy_from_slice(&bytes[..len]);
-        buf
-    })]
-    pub fota_filename: String,
+    pub partition_name: FixedString<PARTITION_NAM_LENGTH>,
+    pub flash_filename: FixedString<FLASH_FILENAME_LENGTH>,
+    pub fota_filename: FixedString<FOTA_FILENAME_LENGTH>,
 }
 
 #[binrw]
@@ -77,24 +110,8 @@ pub struct PitData {
     #[br(temp)]
     #[bw(calc = entries.len() as u32)]
     pub entry_count: u32,
-    #[br(map = |x: [u8; 8]| String::from_utf8_lossy(&x).trim_matches('\0').to_string())]
-    #[bw(map = |x: &String| {
-        let mut buf = [0u8; 8];
-        let bytes = x.as_bytes();
-        let len = std::cmp::min(bytes.len(), 8);
-        buf[..len].copy_from_slice(&bytes[..len]);
-        buf
-    })]
-    pub com_tar2: String,
-    #[br(map = |x: [u8; 8]| String::from_utf8_lossy(&x).trim_matches('\0').to_string())]
-    #[bw(map = |x: &String| {
-        let mut buf = [0u8; 8];
-        let bytes = x.as_bytes();
-        let len = std::cmp::min(bytes.len(), 8);
-        buf[..len].copy_from_slice(&bytes[..len]);
-        buf
-    })]
-    pub cpu_bl_id: String,
+    pub com_tar2: FixedString<8>,
+    pub cpu_bl_id: FixedString<8>,
     pub lu_count: u16,
     #[br(pad_before = 2, count = entry_count)]
     #[bw(pad_before = 2)]
@@ -119,7 +136,7 @@ impl PitEntry {
     }
 
     fn get_partition_name(&self) -> String {
-        self.partition_name.clone()
+        self.partition_name.to_string()
     }
 }
 
@@ -234,31 +251,37 @@ impl PitData {
             println!("Identifier: {}", entry.identifier);
 
             let mut attr_str = String::new();
-            if entry.attributes & 2 != 0 { // Attribute::STL
+            if entry.attributes.stl() {
                 attr_str.push_str("STL ");
             }
-            if entry.attributes & 1 != 0 { // Attribute::Write
+            if entry.attributes.write() {
                 attr_str.push_str("Read/Write");
             } else {
                 attr_str.push_str("Read-Only");
             }
-            println!("Attributes: {} ({})", entry.attributes, attr_str);
+            println!(
+                "Attributes: {} ({})",
+                u32::from_le_bytes(entry.attributes.into_bytes()),
+                attr_str
+            );
 
             let mut update_attr_str = String::new();
-            if entry.update_attributes != 0 {
-                if entry.update_attributes & 1 != 0 { // UpdateAttribute::Fota
-                    if entry.update_attributes & 2 != 0 { // UpdateAttribute::Secure
+            let update_attributes_u32 = u32::from_le_bytes(entry.update_attributes.into_bytes());
+            if update_attributes_u32 != 0 {
+                if entry.update_attributes.fota() {
+                    if entry.update_attributes.secure() {
                         update_attr_str.push_str(" (FOTA, Secure)");
                     } else {
                         update_attr_str.push_str(" (FOTA)");
                     }
-                } else {
-                    if entry.update_attributes & 2 != 0 {
-                        update_attr_str.push_str(" (Secure)");
-                    }
+                } else if entry.update_attributes.secure() {
+                    update_attr_str.push_str(" (Secure)");
                 }
             }
-            println!("Update Attributes: {}{}", entry.update_attributes, update_attr_str);
+            println!(
+                "Update Attributes: {}{}",
+                update_attributes_u32, update_attr_str
+            );
 
             println!("Partition Block Size/Offset: {}", entry.block_size_or_offset);
             println!("Partition Block Count: {}", entry.block_count);
@@ -287,18 +310,6 @@ pub mod ffi {
         MMC = 2,
         All = 3,
         UFS = 8,
-    }
-
-    #[repr(u32)]
-    enum Attribute {
-        Write = 1,
-        STL = 2,
-    }
-
-    #[repr(u32)]
-    enum UpdateAttribute {
-        Fota = 1,
-        Secure = 2,
     }
 
     extern "Rust" {
