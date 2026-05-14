@@ -13,14 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::print_error;
+use crate::version;
+use crate::BridgeManager;
+use crate::InitialiseResult;
 use std::fs::File;
 use std::io::Write;
 use std::thread::sleep;
 use std::time::Duration;
-use crate::version;
-use crate::BridgeManager;
-use crate::InitialiseResult;
-use crate::print_error;
 
 pub fn action_download_pit(output: &str, verbose: bool, wait: bool, usb_log_level: &str) -> i32 {
     if output.is_empty() {
@@ -45,7 +45,8 @@ pub fn action_download_pit(output: &str, verbose: bool, wait: bool, usb_log_leve
     let mut bridge_manager = BridgeManager::new(verbose, wait);
     bridge_manager.set_usb_log_level(usb_log_level);
 
-    if bridge_manager.initialise() != InitialiseResult::Succeeded || !bridge_manager.begin_session() {
+    if bridge_manager.initialise() != InitialiseResult::Succeeded || !bridge_manager.begin_session()
+    {
         return 1;
     }
 
@@ -66,5 +67,9 @@ pub fn action_download_pit(output: &str, verbose: bool, wait: bool, usb_log_leve
         success = false;
     }
 
-    if success { 0 } else { 1 }
+    if success {
+        0
+    } else {
+        1
+    }
 }

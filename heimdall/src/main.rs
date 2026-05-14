@@ -17,15 +17,15 @@
 extern crate libpit;
 
 mod bridge_manager;
-mod packets;
-mod version;
-mod print_pit;
-mod download_pit;
 mod detect;
+mod download_pit;
 mod flash;
+mod packets;
+mod print_pit;
+mod version;
 
 use bridge_manager::BridgeManager;
-use clap::{Arg, Command, ArgAction};
+use clap::{Arg, ArgAction, Command};
 
 #[derive(Clone)]
 pub struct PartitionArg {
@@ -63,8 +63,18 @@ macro_rules! print_error {
 }
 
 fn add_common_args(cmd: Command) -> Command {
-    cmd.arg(Arg::new("verbose").long("verbose").action(ArgAction::SetTrue).help("Enable verbose output"))
-       .arg(Arg::new("usb-log-level").long("usb-log-level").num_args(1).help("Set libusb log level (none, error, warning, info, debug)"))
+    cmd.arg(
+        Arg::new("verbose")
+            .long("verbose")
+            .action(ArgAction::SetTrue)
+            .help("Enable verbose output"),
+    )
+    .arg(
+        Arg::new("usb-log-level")
+            .long("usb-log-level")
+            .num_args(1)
+            .help("Set libusb log level (none, error, warning, info, debug)"),
+    )
 }
 
 const DETECT_HELP: &str = r#"Indicates whether or not a download mode device can be detected.
@@ -100,16 +110,25 @@ fn main() {
         while i < args.len() {
             if args[i].starts_with("--") {
                 let key = args[i].trim_start_matches('-').to_string();
-                if !["repartition", "wait", "skip-size-check", "pit", "verbose", "usb-log-level"].contains(&key.to_lowercase().as_str()) {
-                    if i + 1 < args.len() && !args[i+1].starts_with("--") {
-                        partitions.push(PartitionArg {
-                            name: key.to_uppercase(),
-                            filename: args[i+1].clone(),
-                        });
-                        args.remove(i); // Remove value
-                        args.remove(i); // Remove key
-                        continue;
-                    }
+                if ![
+                    "repartition",
+                    "wait",
+                    "skip-size-check",
+                    "pit",
+                    "verbose",
+                    "usb-log-level",
+                ]
+                .contains(&key.to_lowercase().as_str())
+                    && i + 1 < args.len()
+                    && !args[i + 1].starts_with("--")
+                {
+                    partitions.push(PartitionArg {
+                        name: key.to_uppercase(),
+                        filename: args[i + 1].clone(),
+                    });
+                    args.remove(i); // Remove value
+                    args.remove(i); // Remove key
+                    continue;
                 }
             }
             i += 1;
@@ -149,40 +168,50 @@ fn main() {
         .get_matches_from(args);
 
     let result = match matches.subcommand() {
-        Some(("detect", sub_matches)) => {
-            detect::action_detect(
-                sub_matches.get_flag("verbose"),
-                sub_matches.get_flag("wait"),
-                sub_matches.get_one::<String>("usb-log-level").map(|s| s.as_str()).unwrap_or(""),
-            )
-        }
-        Some(("download-pit", sub_matches)) => {
-            download_pit::action_download_pit(
-                sub_matches.get_one::<String>("output").unwrap(),
-                sub_matches.get_flag("verbose"),
-                sub_matches.get_flag("wait"),
-                sub_matches.get_one::<String>("usb-log-level").map(|s| s.as_str()).unwrap_or(""),
-            )
-        }
-        Some(("print-pit", sub_matches)) => {
-            print_pit::action_print_pit(
-                sub_matches.get_one::<String>("file").map(|s| s.as_str()).unwrap_or(""),
-                sub_matches.get_flag("verbose"),
-                sub_matches.get_flag("wait"),
-                sub_matches.get_one::<String>("usb-log-level").map(|s| s.as_str()).unwrap_or(""),
-            )
-        }
-        Some(("flash", sub_matches)) => {
-            flash::action_flash(
-                sub_matches.get_flag("repartition"),
-                sub_matches.get_flag("verbose"),
-                sub_matches.get_flag("wait"),
-                sub_matches.get_one::<String>("usb-log-level").map(|s| s.as_str()).unwrap_or(""),
-                sub_matches.get_flag("skip-size-check"),
-                sub_matches.get_one::<String>("pit").map(|s| s.as_str()).unwrap_or(""),
-                &partitions,
-            )
-        }
+        Some(("detect", sub_matches)) => detect::action_detect(
+            sub_matches.get_flag("verbose"),
+            sub_matches.get_flag("wait"),
+            sub_matches
+                .get_one::<String>("usb-log-level")
+                .map(|s| s.as_str())
+                .unwrap_or(""),
+        ),
+        Some(("download-pit", sub_matches)) => download_pit::action_download_pit(
+            sub_matches.get_one::<String>("output").unwrap(),
+            sub_matches.get_flag("verbose"),
+            sub_matches.get_flag("wait"),
+            sub_matches
+                .get_one::<String>("usb-log-level")
+                .map(|s| s.as_str())
+                .unwrap_or(""),
+        ),
+        Some(("print-pit", sub_matches)) => print_pit::action_print_pit(
+            sub_matches
+                .get_one::<String>("file")
+                .map(|s| s.as_str())
+                .unwrap_or(""),
+            sub_matches.get_flag("verbose"),
+            sub_matches.get_flag("wait"),
+            sub_matches
+                .get_one::<String>("usb-log-level")
+                .map(|s| s.as_str())
+                .unwrap_or(""),
+        ),
+        Some(("flash", sub_matches)) => flash::action_flash(
+            sub_matches.get_flag("repartition"),
+            sub_matches.get_flag("verbose"),
+            sub_matches.get_flag("wait"),
+            sub_matches
+                .get_one::<String>("usb-log-level")
+                .map(|s| s.as_str())
+                .unwrap_or(""),
+            sub_matches.get_flag("skip-size-check"),
+            sub_matches
+                .get_one::<String>("pit")
+                .map(|s| s.as_str())
+                .unwrap_or(""),
+            &partitions,
+        ),
         Some(("info", _)) => {
             version::print_full_info();
             0

@@ -13,9 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{InitialiseResult, FileTransferDestination};
-use crate::{print_warning, print_error};
 use crate::packets;
+use crate::{print_error, print_warning};
+use crate::{FileTransferDestination, InitialiseResult};
 use libpit::PitData;
 use rusb::{Context, DeviceHandle, LogLevel, UsbContext};
 use std::time::Duration;
@@ -187,14 +187,15 @@ impl BridgeManager {
                 let _ = handle.set_active_configuration(1);
             }
         } else {
-             let _ = handle.set_active_configuration(1);
+            let _ = handle.set_active_configuration(1);
         }
 
         if self.verbose {
             if let Ok(descriptor) = device.device_descriptor() {
                 if let Ok(languages) = handle.read_languages(Duration::from_secs(1)) {
                     if !languages.is_empty() {
-                        if let Ok(manufacturer) = handle.read_manufacturer_string_ascii(&descriptor) {
+                        if let Ok(manufacturer) = handle.read_manufacturer_string_ascii(&descriptor)
+                        {
                             println!("      Manufacturer: \"{}\"", manufacturer);
                         }
                         if let Ok(product) = handle.read_product_string_ascii(&descriptor) {
@@ -208,17 +209,26 @@ impl BridgeManager {
 
                 println!("\n            length: {}", descriptor.length());
                 println!("      device class: {}", descriptor.class_code());
-                println!("               S/N: {}", descriptor.serial_number_string_index().unwrap_or(0));
-                println!("           VID:PID: {:04X}:{:04X}", descriptor.vendor_id(), descriptor.product_id());
+                println!(
+                    "               S/N: {}",
+                    descriptor.serial_number_string_index().unwrap_or(0)
+                );
+                println!(
+                    "           VID:PID: {:04X}:{:04X}",
+                    descriptor.vendor_id(),
+                    descriptor.product_id()
+                );
 
                 let version = descriptor.device_version();
                 let bcd = (version.0 as u16) << 8 | (version.1 as u16) << 4 | (version.2 as u16);
                 println!("         bcdDevice: {:04X}", bcd);
 
-                println!("   iMan:iProd:iSer: {}:{}:{}",
+                println!(
+                    "   iMan:iProd:iSer: {}:{}:{}",
                     descriptor.manufacturer_string_index().unwrap_or(0),
                     descriptor.product_string_index().unwrap_or(0),
-                    descriptor.serial_number_string_index().unwrap_or(0));
+                    descriptor.serial_number_string_index().unwrap_or(0)
+                );
                 println!("          nb confs: {}", descriptor.num_configurations());
             }
         }
@@ -237,10 +247,18 @@ impl BridgeManager {
         for interface in config_descriptor.interfaces() {
             for setting in interface.descriptors() {
                 if self.verbose {
-                    println!("\ninterface[{}].altsetting[{}]: num endpoints = {}",
-                        interface.number(), setting.setting_number(), setting.num_endpoints());
-                    println!("   Class.SubClass.Protocol: {:02X}.{:02X}.{:02X}",
-                        setting.class_code(), setting.sub_class_code(), setting.protocol_code());
+                    println!(
+                        "\ninterface[{}].altsetting[{}]: num endpoints = {}",
+                        interface.number(),
+                        setting.setting_number(),
+                        setting.num_endpoints()
+                    );
+                    println!(
+                        "   Class.SubClass.Protocol: {:02X}.{:02X}.{:02X}",
+                        setting.class_code(),
+                        setting.sub_class_code(),
+                        setting.protocol_code()
+                    );
                 }
 
                 let mut in_endpoint_address = None;
@@ -248,9 +266,11 @@ impl BridgeManager {
 
                 for (i, endpoint) in setting.endpoint_descriptors().enumerate() {
                     if self.verbose {
-                        println!("       endpoint[{}].address: {:02X}",
-                            i, endpoint.address());
-                        println!("           max packet size: {:04X}", endpoint.max_packet_size());
+                        println!("       endpoint[{}].address: {:02X}", i, endpoint.address());
+                        println!(
+                            "           max packet size: {:04X}",
+                            endpoint.max_packet_size()
+                        );
                         println!("          polling interval: {:02X}", endpoint.interval());
                     }
 
@@ -264,13 +284,15 @@ impl BridgeManager {
                 if self.interface_index < 0
                     && setting.num_endpoints() == 2
                     && setting.class_code() == USB_CLASS_CDC_DATA
-                    && in_endpoint_address.is_some()
-                    && out_endpoint_address.is_some()
                 {
-                    self.interface_index = interface.number() as i32;
-                    self.alt_setting_index = setting.setting_number() as i32;
-                    self.in_endpoint = in_endpoint_address.unwrap();
-                    self.out_endpoint = out_endpoint_address.unwrap();
+                    if let (Some(in_addr), Some(out_addr)) =
+                        (in_endpoint_address, out_endpoint_address)
+                    {
+                        self.interface_index = interface.number() as i32;
+                        self.alt_setting_index = setting.setting_number() as i32;
+                        self.in_endpoint = in_addr;
+                        self.out_endpoint = out_addr;
+                    }
                 }
             }
         }
@@ -318,7 +340,10 @@ impl BridgeManager {
         println!("Setting up interface...");
 
         let handle = self.handle.as_mut().unwrap();
-        if handle.set_alternate_setting(self.interface_index as u8, self.alt_setting_index as u8).is_err() {
+        if handle
+            .set_alternate_setting(self.interface_index as u8, self.alt_setting_index as u8)
+            .is_err()
+        {
             print_error!("Setting up interface failed!");
             return false;
         }
@@ -359,7 +384,8 @@ impl BridgeManager {
         }
 
         let mut data_buffer = [0u8; 1024];
-        let data_transferred = self.receive_bulk_transfer(data_buffer.as_mut_ptr(), 1024, 1000, true);
+        let data_transferred =
+            self.receive_bulk_transfer(data_buffer.as_mut_ptr(), 1024, 1000, true);
 
         if data_transferred == 4 && &data_buffer[0..4] == b"LOKE" {
             println!("Protocol initialisation successful.\n");
@@ -367,7 +393,10 @@ impl BridgeManager {
         } else {
             if self.verbose {
                 if data_transferred >= 0 {
-                    print_error!("Expected: \"LOKE\"\nReceived: \"{}\"", String::from_utf8_lossy(&data_buffer[0..data_transferred as usize]));
+                    print_error!(
+                        "Expected: \"LOKE\"\nReceived: \"{}\"",
+                        String::from_utf8_lossy(&data_buffer[0..data_transferred as usize])
+                    );
                 } else {
                     print_error!("Failed to receive handshake response.");
                 }
@@ -419,10 +448,11 @@ impl BridgeManager {
             return false;
         }
 
-        let device_default_packet_size = match packets::Response::unpack(&response, packets::RESPONSE_TYPE_SESSION_SETUP) {
-            Ok(res) => res,
-            Err(_) => return false,
-        };
+        let device_default_packet_size =
+            match packets::Response::unpack(&response, packets::RESPONSE_TYPE_SESSION_SETUP) {
+                Ok(res) => res,
+                Err(_) => return false,
+            };
 
         println!("\nSome devices may take up to 2 minutes to respond.\nPlease be patient!\n");
         std::thread::sleep(Duration::from_millis(3000));
@@ -447,11 +477,14 @@ impl BridgeManager {
             }
 
             match packets::Response::unpack(&response, packets::RESPONSE_TYPE_SESSION_SETUP) {
-                Ok(0) => {},
+                Ok(0) => {}
                 Ok(res) => {
-                    print_error!("Unexpected file part size response!\nExpected: 0\nReceived: {}", res);
+                    print_error!(
+                        "Unexpected file part size response!\nExpected: 0\nReceived: {}",
+                        res
+                    );
                     return false;
-                },
+                }
                 Err(_) => return false,
             }
         }
@@ -504,7 +537,13 @@ impl BridgeManager {
         true
     }
 
-    pub fn send_bulk_transfer(&self, data: *const u8, length: i32, timeout: i32, retry: bool) -> bool {
+    pub fn send_bulk_transfer(
+        &self,
+        data: *const u8,
+        length: i32,
+        timeout: i32,
+        retry: bool,
+    ) -> bool {
         let handle = match self.handle.as_ref() {
             Some(h) => h,
             None => return false,
@@ -515,12 +554,19 @@ impl BridgeManager {
         } else {
             unsafe { std::slice::from_raw_parts(data, length as usize) }
         };
-        let mut result = handle.write_bulk(self.out_endpoint, data_slice, Duration::from_millis(timeout as u64));
+        let mut result = handle.write_bulk(
+            self.out_endpoint,
+            data_slice,
+            Duration::from_millis(timeout as u64),
+        );
 
         if result.is_err() && retry {
             let retry_delay = 250;
             if self.verbose {
-                print_warning!("libusb error {} whilst sending bulk transfer.", result.as_ref().unwrap_err());
+                print_warning!(
+                    "libusb error {} whilst sending bulk transfer.",
+                    result.as_ref().unwrap_err()
+                );
             }
 
             for i in 0..5 {
@@ -528,12 +574,19 @@ impl BridgeManager {
                     println!(" Retrying...");
                 }
                 std::thread::sleep(Duration::from_millis(retry_delay * (i + 1)));
-                result = handle.write_bulk(self.out_endpoint, data_slice, Duration::from_millis(timeout as u64));
+                result = handle.write_bulk(
+                    self.out_endpoint,
+                    data_slice,
+                    Duration::from_millis(timeout as u64),
+                );
                 if result.is_ok() {
                     break;
                 }
                 if self.verbose {
-                    print_warning!("libusb error {} whilst sending bulk transfer.", result.as_ref().unwrap_err());
+                    print_warning!(
+                        "libusb error {} whilst sending bulk transfer.",
+                        result.as_ref().unwrap_err()
+                    );
                 }
             }
             if self.verbose {
@@ -547,7 +600,13 @@ impl BridgeManager {
         }
     }
 
-    pub fn receive_bulk_transfer(&self, data: *mut u8, length: i32, timeout: i32, retry: bool) -> i32 {
+    pub fn receive_bulk_transfer(
+        &self,
+        data: *mut u8,
+        length: i32,
+        timeout: i32,
+        retry: bool,
+    ) -> i32 {
         let handle = match self.handle.as_ref() {
             Some(h) => h,
             None => return -1,
@@ -561,12 +620,19 @@ impl BridgeManager {
         };
 
         let data_slice = unsafe { std::slice::from_raw_parts_mut(data_ptr, data_len as usize) };
-        let mut result = handle.read_bulk(self.in_endpoint, data_slice, Duration::from_millis(timeout as u64));
+        let mut result = handle.read_bulk(
+            self.in_endpoint,
+            data_slice,
+            Duration::from_millis(timeout as u64),
+        );
 
         if result.is_err() && retry {
             let retry_delay = 250;
             if self.verbose {
-                print_warning!("libusb error {} whilst receiving bulk transfer.", result.as_ref().unwrap_err());
+                print_warning!(
+                    "libusb error {} whilst receiving bulk transfer.",
+                    result.as_ref().unwrap_err()
+                );
             }
 
             for i in 0..5 {
@@ -574,12 +640,19 @@ impl BridgeManager {
                     println!(" Retrying...");
                 }
                 std::thread::sleep(Duration::from_millis(retry_delay * (i + 1)));
-                result = handle.read_bulk(self.in_endpoint, data_slice, Duration::from_millis(timeout as u64));
+                result = handle.read_bulk(
+                    self.in_endpoint,
+                    data_slice,
+                    Duration::from_millis(timeout as u64),
+                );
                 if result.is_ok() {
                     break;
                 }
                 if self.verbose {
-                    print_warning!("libusb error {} whilst receiving bulk transfer.", result.as_ref().unwrap_err());
+                    print_warning!(
+                        "libusb error {} whilst receiving bulk transfer.",
+                        result.as_ref().unwrap_err()
+                    );
                 }
             }
             if self.verbose {
@@ -599,20 +672,24 @@ impl BridgeManager {
         timeout: i32,
         empty_transfer_mode: EmptyTransferMode,
     ) -> bool {
-        if (empty_transfer_mode as u32) & (EmptyTransferMode::Before as u32) != 0 {
-            if !self.send_bulk_transfer(std::ptr::null(), 0, 100, false) && self.verbose {
-                print_warning!("Empty bulk transfer before sending packet failed. Continuing anyway...");
-            }
+        if (empty_transfer_mode as u32) & (EmptyTransferMode::Before as u32) != 0
+            && !self.send_bulk_transfer(std::ptr::null(), 0, 100, false)
+            && self.verbose
+        {
+            print_warning!(
+                "Empty bulk transfer before sending packet failed. Continuing anyway..."
+            );
         }
 
         if !self.send_bulk_transfer(packet.as_ptr(), packet.len() as i32, timeout, true) {
             return false;
         }
 
-        if (empty_transfer_mode as u32) & (EmptyTransferMode::After as u32) != 0 {
-            if !self.send_bulk_transfer(std::ptr::null(), 0, 100, false) && self.verbose {
-                print_warning!("Empty bulk transfer after sending packet failed. Continuing anyway...");
-            }
+        if (empty_transfer_mode as u32) & (EmptyTransferMode::After as u32) != 0
+            && !self.send_bulk_transfer(std::ptr::null(), 0, 100, false)
+            && self.verbose
+        {
+            print_warning!("Empty bulk transfer after sending packet failed. Continuing anyway...");
         }
 
         true
@@ -624,29 +701,40 @@ impl BridgeManager {
         timeout: i32,
         empty_transfer_mode: EmptyTransferMode,
     ) -> bool {
-        if (empty_transfer_mode as u32) & (EmptyTransferMode::Before as u32) != 0 {
-            if self.receive_bulk_transfer(std::ptr::null_mut(), 0, 100, false) < 0 && self.verbose {
-                print_warning!("Empty bulk transfer before receiving packet failed. Continuing anyway...");
-            }
+        if (empty_transfer_mode as u32) & (EmptyTransferMode::Before as u32) != 0
+            && self.receive_bulk_transfer(std::ptr::null_mut(), 0, 100, false) < 0
+            && self.verbose
+        {
+            print_warning!(
+                "Empty bulk transfer before receiving packet failed. Continuing anyway..."
+            );
         }
 
-        let received_size = self.receive_bulk_transfer(packet.as_mut_ptr(), packet.len() as i32, timeout, true);
+        let received_size =
+            self.receive_bulk_transfer(packet.as_mut_ptr(), packet.len() as i32, timeout, true);
 
         if received_size < 0 {
             return false;
         }
 
         if received_size as usize != packet.len() {
-             if self.verbose {
-                print_error!("Incorrect packet size received - expected size = {}, received size = {}.", packet.len(), received_size);
+            if self.verbose {
+                print_error!(
+                    "Incorrect packet size received - expected size = {}, received size = {}.",
+                    packet.len(),
+                    received_size
+                );
             }
             return false;
         }
 
-        if (empty_transfer_mode as u32) & (EmptyTransferMode::After as u32) != 0 {
-            if self.receive_bulk_transfer(std::ptr::null_mut(), 0, 100, false) < 0 && self.verbose {
-                print_warning!("Empty bulk transfer after receiving packet failed. Continuing anyway...");
-            }
+        if (empty_transfer_mode as u32) & (EmptyTransferMode::After as u32) != 0
+            && self.receive_bulk_transfer(std::ptr::null_mut(), 0, 100, false) < 0
+            && self.verbose
+        {
+            print_warning!(
+                "Empty bulk transfer after receiving packet failed. Continuing anyway..."
+            );
         }
 
         true
@@ -667,7 +755,9 @@ impl BridgeManager {
         let mut response = [0u8; 8];
         success = self.receive_packet(&mut response, 3000, EmptyTransferMode::None);
 
-        if !success || packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE).is_err() {
+        if !success
+            || packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE).is_err()
+        {
             print_error!("Failed to confirm transfer initialisation!");
             return false;
         }
@@ -683,7 +773,9 @@ impl BridgeManager {
 
         success = self.receive_packet(&mut response, 3000, EmptyTransferMode::None);
 
-        if !success || packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE).is_err() {
+        if !success
+            || packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE).is_err()
+        {
             print_error!("Failed to confirm sending of PIT file part information!");
             return false;
         }
@@ -703,7 +795,9 @@ impl BridgeManager {
 
         success = self.receive_packet(&mut response, 3000, EmptyTransferMode::None);
 
-        if !success || packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE).is_err() {
+        if !success
+            || packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE).is_err()
+        {
             print_error!("Failed to receive PIT file part response!");
             return false;
         }
@@ -719,7 +813,9 @@ impl BridgeManager {
 
         success = self.receive_packet(&mut response, 3000, EmptyTransferMode::None);
 
-        if !success || packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE).is_err() {
+        if !success
+            || packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE).is_err()
+        {
             print_error!("Failed to confirm end of PIT file transfer!");
             return false;
         }
@@ -743,7 +839,8 @@ impl BridgeManager {
             return Vec::new();
         }
 
-        let file_size = match packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE) {
+        let file_size = match packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE)
+        {
             Ok(size) => size,
             Err(_) => {
                 print_error!("Failed to receive PIT file size!");
@@ -774,7 +871,8 @@ impl BridgeManager {
             };
 
             let mut part_buffer = [0u8; 500]; // ReceiveFilePartPacket::kDataSize
-            let received_size = self.receive_bulk_transfer(part_buffer.as_mut_ptr(), 500, 3000, true);
+            let received_size =
+                self.receive_bulk_transfer(part_buffer.as_mut_ptr(), 500, 3000, true);
 
             if received_size < 0 {
                 print_error!("Failed to receive PIT file part #{}!", i);
@@ -800,7 +898,9 @@ impl BridgeManager {
 
         success = self.receive_packet(&mut response, 3000, EmptyTransferMode::None);
 
-        if !success || packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE).is_err() {
+        if !success
+            || packets::Response::unpack(&response, packets::RESPONSE_TYPE_PIT_FILE).is_err()
+        {
             print_error!("Failed to receive end PIT file transfer verification!");
             return Vec::new();
         }
@@ -842,20 +942,26 @@ impl BridgeManager {
         let mut response = [0u8; 8];
         success = self.receive_packet(&mut response, 3000, EmptyTransferMode::None);
 
-        if !success || packets::Response::unpack(&response, packets::RESPONSE_TYPE_FILE_TRANSFER).is_err() {
+        if !success
+            || packets::Response::unpack(&response, packets::RESPONSE_TYPE_FILE_TRANSFER).is_err()
+        {
             print_error!("Failed to confirm transfer initialisation!");
             return false;
         }
 
-        let sequence_count = file_size / (self.file_transfer_sequence_max_length * self.file_transfer_packet_size);
+        let sequence_count =
+            file_size / (self.file_transfer_sequence_max_length * self.file_transfer_packet_size);
         let mut last_sequence_size = self.file_transfer_sequence_max_length;
         let partial_packet_byte_count = file_size % self.file_transfer_packet_size;
 
         let mut sequence_count = sequence_count;
 
-        if file_size % (self.file_transfer_sequence_max_length * self.file_transfer_packet_size) != 0 {
+        if !file_size
+            .is_multiple_of(self.file_transfer_sequence_max_length * self.file_transfer_packet_size)
+        {
             sequence_count += 1;
-            let last_sequence_bytes = file_size % (self.file_transfer_sequence_max_length * self.file_transfer_packet_size);
+            let last_sequence_bytes = file_size
+                % (self.file_transfer_sequence_max_length * self.file_transfer_packet_size);
             last_sequence_size = last_sequence_bytes / self.file_transfer_packet_size;
             if partial_packet_byte_count != 0 {
                 last_sequence_size += 1;
@@ -870,7 +976,11 @@ impl BridgeManager {
 
         for sequence_index in 0..sequence_count {
             let is_last_sequence = sequence_index == sequence_count - 1;
-            let sequence_size = if is_last_sequence { last_sequence_size } else { self.file_transfer_sequence_max_length };
+            let sequence_size = if is_last_sequence {
+                last_sequence_size
+            } else {
+                self.file_transfer_sequence_max_length
+            };
             let sequence_total_byte_count = sequence_size * self.file_transfer_packet_size;
 
             let packet = packets::FlashPartFileTransferPacket::create(sequence_total_byte_count);
@@ -884,16 +994,26 @@ impl BridgeManager {
 
             success = self.receive_packet(&mut response, 3000, EmptyTransferMode::None);
 
-            if !success || packets::Response::unpack(&response, packets::RESPONSE_TYPE_FILE_TRANSFER).is_err() {
+            if !success
+                || packets::Response::unpack(&response, packets::RESPONSE_TYPE_FILE_TRANSFER)
+                    .is_err()
+            {
                 println!();
                 print_error!("Failed to confirm beginning of file transfer sequence!");
                 return false;
             }
 
             for file_part_index in 0..sequence_size {
-                let send_empty_transfer_mode = if file_part_index == 0 { EmptyTransferMode::None } else { EmptyTransferMode::Before };
+                let send_empty_transfer_mode = if file_part_index == 0 {
+                    EmptyTransferMode::None
+                } else {
+                    EmptyTransferMode::Before
+                };
 
-                let packet_byte_count = if is_last_sequence && file_part_index == sequence_size - 1 && partial_packet_byte_count != 0 {
+                let packet_byte_count = if is_last_sequence
+                    && file_part_index == sequence_size - 1
+                    && partial_packet_byte_count != 0
+                {
                     partial_packet_byte_count
                 } else {
                     self.file_transfer_packet_size
@@ -902,11 +1022,14 @@ impl BridgeManager {
                 // Read data from reader
                 file_buffer.fill(0);
                 if let Err(e) = reader.read_exact(&mut file_buffer[..packet_byte_count as usize]) {
-                     print_error!("Failed to read from file: {}", e);
-                     return false;
+                    print_error!("Failed to read from file: {}", e);
+                    return false;
                 }
 
-                let packet = packets::create_send_file_part_packet(&file_buffer, self.file_transfer_packet_size);
+                let packet = packets::create_send_file_part_packet(
+                    &file_buffer,
+                    self.file_transfer_packet_size,
+                );
                 success = self.send_packet(&packet, 3000, send_empty_transfer_mode);
 
                 if !success {
@@ -916,10 +1039,17 @@ impl BridgeManager {
                 }
 
                 // Response
-                success = self.receive_packet(&mut response, self.file_transfer_sequence_timeout as i32, EmptyTransferMode::None);
+                success = self.receive_packet(
+                    &mut response,
+                    self.file_transfer_sequence_timeout as i32,
+                    EmptyTransferMode::None,
+                );
 
                 if success {
-                    let received_part_index = match packets::Response::unpack(&response, packets::RESPONSE_TYPE_SEND_FILE_PART) {
+                    let received_part_index = match packets::Response::unpack(
+                        &response,
+                        packets::RESPONSE_TYPE_SEND_FILE_PART,
+                    ) {
                         Ok(idx) => idx,
                         Err(_) => {
                             success = false;
@@ -928,7 +1058,11 @@ impl BridgeManager {
                     };
                     if success && received_part_index != file_part_index {
                         println!();
-                        print_error!("Expected file part index: {} Received: {}", file_part_index, received_part_index);
+                        print_error!(
+                            "Expected file part index: {} Received: {}",
+                            file_part_index,
+                            received_part_index
+                        );
                         return false;
                     }
                 }
@@ -940,26 +1074,40 @@ impl BridgeManager {
                         println!("Retrying...");
 
                         // Rewind reader pointer
-                        if let Err(e) = reader.seek(std::io::SeekFrom::Start(bytes_transferred as u64)) {
+                        if let Err(e) =
+                            reader.seek(std::io::SeekFrom::Start(bytes_transferred as u64))
+                        {
                             print_error!("Failed to seek in file: {}", e);
                             return false;
                         }
-                        if let Err(e) = reader.read_exact(&mut file_buffer[..packet_byte_count as usize]) {
+                        if let Err(e) =
+                            reader.read_exact(&mut file_buffer[..packet_byte_count as usize])
+                        {
                             print_error!("Failed to read from file: {}", e);
                             return false;
                         }
 
-                        let packet = packets::create_send_file_part_packet(&file_buffer, self.file_transfer_packet_size);
+                        let packet = packets::create_send_file_part_packet(
+                            &file_buffer,
+                            self.file_transfer_packet_size,
+                        );
                         success = self.send_packet(&packet, 3000, send_empty_transfer_mode);
 
                         if !success {
                             continue;
                         }
 
-                        success = self.receive_packet(&mut response, self.file_transfer_sequence_timeout as i32, EmptyTransferMode::None);
+                        success = self.receive_packet(
+                            &mut response,
+                            self.file_transfer_sequence_timeout as i32,
+                            EmptyTransferMode::None,
+                        );
 
                         if success {
-                            let received_part_index = match packets::Response::unpack(&response, packets::RESPONSE_TYPE_SEND_FILE_PART) {
+                            let received_part_index = match packets::Response::unpack(
+                                &response,
+                                packets::RESPONSE_TYPE_SEND_FILE_PART,
+                            ) {
                                 Ok(idx) => idx,
                                 Err(_) => {
                                     success = false;
@@ -981,7 +1129,8 @@ impl BridgeManager {
                 }
 
                 bytes_transferred += packet_byte_count;
-                let current_percent = (100.0f32 * (bytes_transferred as f32 / file_size as f32)) as u32;
+                let current_percent =
+                    (100.0f32 * (bytes_transferred as f32 / file_size as f32)) as u32;
 
                 if current_percent != previous_percent {
                     println!("\n{}%", current_percent);
@@ -989,19 +1138,28 @@ impl BridgeManager {
                 }
             }
 
-            let sequence_effective_byte_count = if is_last_sequence && partial_packet_byte_count != 0 {
-                self.file_transfer_packet_size * (last_sequence_size - 1) + partial_packet_byte_count
-            } else {
-                sequence_total_byte_count
-            };
+            let sequence_effective_byte_count =
+                if is_last_sequence && partial_packet_byte_count != 0 {
+                    self.file_transfer_packet_size * (last_sequence_size - 1)
+                        + partial_packet_byte_count
+                } else {
+                    sequence_total_byte_count
+                };
 
             let packet = match destination {
-                FileTransferDestination::Modem => {
-                    packets::EndModemFileTransferPacket::create(sequence_effective_byte_count, 0, device_type, is_last_sequence)
-                },
-                FileTransferDestination::Phone => {
-                    packets::EndPhoneFileTransferPacket::create(sequence_effective_byte_count, 0, device_type, file_identifier, is_last_sequence)
-                },
+                FileTransferDestination::Modem => packets::EndModemFileTransferPacket::create(
+                    sequence_effective_byte_count,
+                    0,
+                    device_type,
+                    is_last_sequence,
+                ),
+                FileTransferDestination::Phone => packets::EndPhoneFileTransferPacket::create(
+                    sequence_effective_byte_count,
+                    0,
+                    device_type,
+                    file_identifier,
+                    is_last_sequence,
+                ),
             };
 
             success = self.send_packet(&packet, 3000, EmptyTransferMode::BeforeAndAfter);
@@ -1012,9 +1170,16 @@ impl BridgeManager {
                 return false;
             }
 
-            success = self.receive_packet(&mut response, self.file_transfer_sequence_timeout as i32, EmptyTransferMode::None);
+            success = self.receive_packet(
+                &mut response,
+                self.file_transfer_sequence_timeout as i32,
+                EmptyTransferMode::None,
+            );
 
-            if !success || packets::Response::unpack(&response, packets::RESPONSE_TYPE_FILE_TRANSFER).is_err() {
+            if !success
+                || packets::Response::unpack(&response, packets::RESPONSE_TYPE_FILE_TRANSFER)
+                    .is_err()
+            {
                 println!();
                 print_error!("Failed to confirm end of file transfer sequence!");
                 return false;
@@ -1038,7 +1203,7 @@ impl BridgeManager {
             Ok(res) => {
                 *result = res;
                 true
-            },
+            }
             Err(_) => false,
         }
     }

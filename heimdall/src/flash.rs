@@ -14,11 +14,11 @@
 // limitations under the License.
 
 use crate::bridge_manager::BridgeManager;
-use crate::InitialiseResult;
-use crate::FileTransferDestination;
-use crate::PartitionArg;
+use crate::print_error;
 use crate::version;
-use crate::{print_error};
+use crate::FileTransferDestination;
+use crate::InitialiseResult;
+use crate::PartitionArg;
 use libpit::{PitData, PitEntry};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -95,11 +95,17 @@ pub fn action_flash(
     let mut bridge_manager = BridgeManager::new(verbose, wait);
     bridge_manager.set_usb_log_level(usb_log_level);
 
-    if bridge_manager.initialise() != InitialiseResult::Succeeded || !bridge_manager.begin_session() {
+    if bridge_manager.initialise() != InitialiseResult::Succeeded || !bridge_manager.begin_session()
+    {
         return 1;
     }
 
-    let mut success = send_total_transfer_size(&bridge_manager, &partition_files, pit_file.as_ref(), repartition);
+    let mut success = send_total_transfer_size(
+        &bridge_manager,
+        &partition_files,
+        pit_file.as_ref(),
+        repartition,
+    );
 
     if success {
         if let Some(pit_data) = get_pit_data(&bridge_manager, pit_file, repartition) {
@@ -119,7 +125,11 @@ pub fn action_flash(
         success = false;
     }
 
-    if success { 0 } else { 1 }
+    if success {
+        0
+    } else {
+        1
+    }
 }
 
 fn send_total_transfer_size(
@@ -238,10 +248,13 @@ fn flash_partitions(
                 // Size check
                 if !skip_size_check {
                     let device_type = e.device_type;
-                    if device_type == 2 || device_type == 8 { // MMC or UFS
+                    if device_type == 2 || device_type == 8 {
+                        // MMC or UFS
                         let partition_size = e.block_count as u64;
                         let block_size = if device_type == 8 { 4096 } else { 512 };
-                        if partition_size > 0 && (part_file.file_size as u64) > partition_size * block_size {
+                        if partition_size > 0
+                            && (part_file.file_size as u64) > partition_size * block_size
+                        {
                             print_error!(
                                 "{} partition is too small for given file. Use --skip-size-check to flash anyways.",
                                 part_file.argument_name
@@ -279,7 +292,7 @@ fn flash_partitions(
 
     for mut info in partition_flash_infos {
         println!("Uploading {}", info.pit_entry.partition_name);
-        
+
         let destination = if info.pit_entry.binary_type == 1 {
             FileTransferDestination::Modem
         } else {

@@ -118,28 +118,6 @@ pub struct PitData {
     pub entries: Vec<PitEntry>,
 }
 
-impl PitEntry {
-    pub fn get_binary_type(&self) -> u32 {
-        self.binary_type
-    }
-
-    pub fn get_device_type(&self) -> u32 {
-        self.device_type
-    }
-
-    pub fn get_identifier(&self) -> u32 {
-        self.identifier
-    }
-
-    pub fn get_block_count(&self) -> u32 {
-        self.block_count
-    }
-
-    pub fn get_partition_name(&self) -> String {
-        self.partition_name.to_string()
-    }
-}
-
 impl PitData {
     pub fn new(data: &[u8]) -> Result<Self, binrw::Error> {
         if data.len() < 8 {
@@ -174,22 +152,18 @@ impl PitData {
     pub fn get_padded_size(&self) -> u32 {
         let data_size = self.get_data_size();
         let mut padded_size = (data_size / PADDED_SIZE_MULTIPLICAND) * PADDED_SIZE_MULTIPLICAND;
-        if data_size % PADDED_SIZE_MULTIPLICAND != 0 {
+        if !data_size.is_multiple_of(PADDED_SIZE_MULTIPLICAND) {
             padded_size += PADDED_SIZE_MULTIPLICAND;
         }
         padded_size
     }
 
     pub fn find_entry_by_name(&self, name: &str) -> Option<&PitEntry> {
-        self.entries
-            .iter()
-            .find(|e| e.partition_name == name)
+        self.entries.iter().find(|e| e.partition_name == name)
     }
 
     pub fn find_entry_by_id(&self, id: u32) -> Option<&PitEntry> {
-        self.entries
-            .iter()
-            .find(|e| e.identifier == id)
+        self.entries.iter().find(|e| e.identifier == id)
     }
 
     pub fn pack(&self, data: &mut [u8]) {
@@ -261,7 +235,10 @@ impl PitData {
                 update_attributes_u32, update_attr_str
             );
 
-            println!("Partition Block Size/Offset: {}", entry.block_size_or_offset);
+            println!(
+                "Partition Block Size/Offset: {}",
+                entry.block_size_or_offset
+            );
             println!("Partition Block Count: {}", entry.block_count);
             println!("File Offset (Obsolete): {}", entry.file_offset);
             println!("File Size (Obsolete): {}", entry.file_size);
@@ -272,5 +249,3 @@ impl PitData {
         println!();
     }
 }
-
-

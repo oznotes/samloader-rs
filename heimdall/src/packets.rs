@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use binrw::{BinRead, BinWrite, io::Cursor};
+use binrw::{io::Cursor, BinRead, BinWrite};
 
 pub const CONTROL_TYPE_SESSION: u32 = 0x64;
 pub const CONTROL_TYPE_PIT_FILE: u32 = 0x65;
@@ -283,7 +283,12 @@ pub struct EndModemFileTransferPacket {
 }
 
 impl EndModemFileTransferPacket {
-    pub fn create(sequence_byte_count: u32, unknown1: u32, device_type: u32, end_of_file: bool) -> Vec<u8> {
+    pub fn create(
+        sequence_byte_count: u32,
+        unknown1: u32,
+        device_type: u32,
+        end_of_file: bool,
+    ) -> Vec<u8> {
         to_vec(EndModemFileTransferPacket {
             control_type: CONTROL_TYPE_FILE_TRANSFER,
             request: REQUEST_FILE_TRANSFER_END,
@@ -313,7 +318,13 @@ pub struct EndPhoneFileTransferPacket {
 }
 
 impl EndPhoneFileTransferPacket {
-    pub fn create(sequence_byte_count: u32, unknown1: u32, device_type: u32, file_identifier: u32, end_of_file: bool) -> Vec<u8> {
+    pub fn create(
+        sequence_byte_count: u32,
+        unknown1: u32,
+        device_type: u32,
+        file_identifier: u32,
+        end_of_file: bool,
+    ) -> Vec<u8> {
         to_vec(EndPhoneFileTransferPacket {
             control_type: CONTROL_TYPE_FILE_TRANSFER,
             request: REQUEST_FILE_TRANSFER_END,
@@ -352,7 +363,9 @@ where
     for<'a> T::Args<'a>: Default,
 {
     let mut writer = Cursor::new(Vec::with_capacity(1024));
-    packet.write_le(&mut writer).expect("Failed to write packet");
+    packet
+        .write_le(&mut writer)
+        .expect("Failed to write packet");
     writer.into_inner()
 }
 
