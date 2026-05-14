@@ -19,20 +19,20 @@ use crate::version;
 use crate::PartitionArg;
 use libpit::{DeviceType, PitData, PitEntry};
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 use std::thread::sleep;
 use std::time::Duration;
 
 struct PartitionFile {
     argument_name: String,
     file: File,
-    file_size: u32,
+    file_size: u64,
 }
 
 struct PartitionFlashInfo<'a> {
     pit_entry: &'a PitEntry,
     file: File,
-    file_size: u32,
+    file_size: u64,
 }
 
 pub(crate) fn action_flash(
@@ -65,19 +65,15 @@ pub(crate) fn action_flash(
         .iter()
         .map(|part| {
             File::open(&part.filename)
-                .map_err(|_| part.filename.clone())
-                .and_then(|mut f| {
-                    let file_size =
-                        f.seek(SeekFrom::End(0))
-                            .map_err(|_| part.filename.clone())? as u32;
-                    f.seek(SeekFrom::Start(0))
-                        .map_err(|_| part.filename.clone())?;
+                .and_then(|f| {
+                    let file_size = f.metadata()?.len();
                     Ok(PartitionFile {
                         argument_name: part.name.clone(),
                         file: f,
                         file_size,
                     })
                 })
+                .map_err(|_| part.filename.clone())
         })
         .collect::<Result<Vec<_>, String>>()
     {
@@ -161,7 +157,7 @@ fn send_total_transfer_size(
     let mut total_bytes: u64 = 0;
 
     for part in partition_files {
-        total_bytes += part.file_size as u64;
+        total_bytes += part.file_size;
     }
 
     if repartition {
@@ -240,11 +236,7 @@ fn flash_partitions(
         let entry = if let Ok(id) = part_file.argument_name.parse::<u32>() {
             pit_data.find_entry_by_id(id)
         } else {
-            let mut name = part_file.argument_name.clone();
-            if name == "PIT" {
-                name = "pit".to_string();
-            }
-            pit_data.find_entry_by_name(&name)
+            pit_data.find_entry_by_name(&part_file.argument_name)
         };
 
         match entry {
@@ -260,9 +252,7 @@ fn flash_partitions(
                         } else {
                             512
                         };
-                        if partition_size > 0
-                            && (part_file.file_size as u64) > partition_size * block_size
-                        {
+                        if partition_size > 0 && part_file.file_size > partition_size * block_size {
                             return Err(format!(
                                 "{} partition is too small for given file. Use --skip-size-check to flash anyways.",
                                 part_file.argument_name

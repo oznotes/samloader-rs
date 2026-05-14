@@ -811,7 +811,7 @@ impl BridgeManager {
     pub(crate) fn send_file_from_reader<R: std::io::Read + std::io::Seek>(
         &self,
         reader: &mut R,
-        file_size: u32,
+        file_size: u64,
         pit_entry: &PitEntry,
     ) -> Result<(), String> {
         // Start file transfer
@@ -827,26 +827,26 @@ impl BridgeManager {
             return Err("Failed to confirm transfer initialisation!".to_string());
         }
 
-        let sequence_count =
-            file_size / (self.file_transfer_sequence_max_length * self.file_transfer_packet_size);
+        let transfer_packet_size = self.file_transfer_packet_size as u64;
+        let transfer_sequence_max_length = self.file_transfer_sequence_max_length as u64;
+
+        let sequence_count = file_size / (transfer_sequence_max_length * transfer_packet_size);
         let mut last_sequence_size = self.file_transfer_sequence_max_length;
-        let partial_packet_byte_count = file_size % self.file_transfer_packet_size;
+        let partial_packet_byte_count = file_size % transfer_packet_size;
 
         let mut sequence_count = sequence_count;
 
-        if !file_size
-            .is_multiple_of(self.file_transfer_sequence_max_length * self.file_transfer_packet_size)
-        {
+        if !file_size.is_multiple_of(transfer_sequence_max_length * transfer_packet_size) {
             sequence_count += 1;
-            let last_sequence_bytes = file_size
-                % (self.file_transfer_sequence_max_length * self.file_transfer_packet_size);
-            last_sequence_size = last_sequence_bytes / self.file_transfer_packet_size;
+            let last_sequence_bytes =
+                file_size % (transfer_sequence_max_length * transfer_packet_size);
+            last_sequence_size = (last_sequence_bytes / transfer_packet_size) as u32;
             if partial_packet_byte_count != 0 {
                 last_sequence_size += 1;
             }
         }
 
-        let mut bytes_transferred = 0u32;
+        let mut bytes_transferred = 0u64;
         let mut previous_percent = 0u32;
         println!("0%");
 
@@ -887,7 +887,7 @@ impl BridgeManager {
                     && file_part_index == sequence_size - 1
                     && partial_packet_byte_count != 0
                 {
-                    partial_packet_byte_count
+                    partial_packet_byte_count as u32
                 } else {
                     self.file_transfer_packet_size
                 };
@@ -937,7 +937,7 @@ impl BridgeManager {
 
                         // Rewind reader pointer
                         reader
-                            .seek(std::io::SeekFrom::Start(bytes_transferred as u64))
+                            .seek(std::io::SeekFrom::Start(bytes_transferred))
                             .map_err(|e| format!("Failed to seek in file: {}", e))?;
                         reader
                             .read_exact(&mut file_buffer[..packet_byte_count as usize])
@@ -981,7 +981,7 @@ impl BridgeManager {
                     }
                 }
 
-                bytes_transferred += packet_byte_count;
+                bytes_transferred += packet_byte_count as u64;
                 let current_percent =
                     (100.0f32 * (bytes_transferred as f32 / file_size as f32)) as u32;
 
@@ -994,7 +994,7 @@ impl BridgeManager {
             let sequence_effective_byte_count =
                 if is_last_sequence && partial_packet_byte_count != 0 {
                     self.file_transfer_packet_size * (last_sequence_size - 1)
-                        + partial_packet_byte_count
+                        + partial_packet_byte_count as u32
                 } else {
                     sequence_total_byte_count
                 };

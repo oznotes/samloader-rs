@@ -110,11 +110,6 @@ pub(crate) enum FileTransferRequest {
         #[brw(pad_after = 1016)]
         _padding: (),
     },
-    #[brw(magic = 1u32)]
-    Dump {
-        #[brw(pad_after = 1016)]
-        _padding: (),
-    },
     #[brw(magic = 2u32)]
     Part {
         sequence_byte_count: u32,
@@ -210,10 +205,6 @@ impl OutboundPacket {
 
     pub(crate) fn file_transfer_flash() -> OutboundPacket {
         OutboundPacket::FileTransfer(FileTransferRequest::Flash { _padding: () })
-    }
-
-    pub(crate) fn file_transfer_dump() -> OutboundPacket {
-        OutboundPacket::FileTransfer(FileTransferRequest::Dump { _padding: () })
     }
 
     pub(crate) fn flash_part_file_transfer(sequence_byte_count: u32) -> OutboundPacket {
