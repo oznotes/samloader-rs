@@ -20,6 +20,7 @@ mod bridge_manager;
 mod packets;
 mod version;
 mod print_pit;
+mod download_pit;
 
 use bridge_manager::BridgeManager;
 use clap::{Arg, Command, ArgAction};
@@ -97,7 +98,6 @@ pub mod ffi {
         type PitData;
 
         fn action_detect(verbose: bool, wait: bool, usb_log_level: &str) -> i32;
-        fn action_download_pit(output: &str, verbose: bool, wait: bool, usb_log_level: &str) -> i32;
         fn action_flash(repartition: bool, verbose: bool, wait: bool, usb_log_level: &str, skip_size_check: bool, pit: &str, partitions: &Vec<PartitionArg>) -> i32;
     }
 }
@@ -213,7 +213,7 @@ fn main() {
             )
         }
         Some(("download-pit", sub_matches)) => {
-            ffi::action_download_pit(
+            download_pit::action_download_pit(
                 sub_matches.get_one::<String>("output").unwrap(),
                 sub_matches.get_flag("verbose"),
                 sub_matches.get_flag("wait"),
