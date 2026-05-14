@@ -19,6 +19,7 @@ extern crate libpit;
 mod bridge_manager;
 mod packets;
 mod version;
+mod print_pit;
 
 use bridge_manager::BridgeManager;
 use clap::{Arg, Command, ArgAction};
@@ -97,7 +98,6 @@ pub mod ffi {
 
         fn action_detect(verbose: bool, wait: bool, usb_log_level: &str) -> i32;
         fn action_download_pit(output: &str, verbose: bool, wait: bool, usb_log_level: &str) -> i32;
-        fn action_print_pit(file: &str, verbose: bool, wait: bool, usb_log_level: &str) -> i32;
         fn action_flash(repartition: bool, verbose: bool, wait: bool, usb_log_level: &str, skip_size_check: bool, pit: &str, partitions: &Vec<PartitionArg>) -> i32;
     }
 }
@@ -221,7 +221,7 @@ fn main() {
             )
         }
         Some(("print-pit", sub_matches)) => {
-            ffi::action_print_pit(
+            print_pit::action_print_pit(
                 sub_matches.get_one::<String>("file").map(|s| s.as_str()).unwrap_or(""),
                 sub_matches.get_flag("verbose"),
                 sub_matches.get_flag("wait"),

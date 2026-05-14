@@ -65,9 +65,9 @@ const FILE_TRANSFER_SEQUENCE_TIMEOUT_DEFAULT: u32 = 30000;
 const USB_CLASS_CDC_DATA: u8 = 0x0A;
 
 impl BridgeManager {
-    pub fn create(verbose: bool, wait_for_device: bool) -> Box<Self> {
+    pub fn new(verbose: bool, wait_for_device: bool) -> Self {
         let context = Context::new().expect("Failed to create libusb context");
-        Box::new(Self {
+        Self {
             verbose,
             wait_for_device,
             context,
@@ -84,7 +84,11 @@ impl BridgeManager {
             file_transfer_sequence_max_length: FILE_TRANSFER_SEQUENCE_MAX_LENGTH_DEFAULT,
             file_transfer_packet_size: FILE_TRANSFER_PACKET_SIZE_DEFAULT,
             file_transfer_sequence_timeout: FILE_TRANSFER_SEQUENCE_TIMEOUT_DEFAULT,
-        })
+        }
+    }
+
+    pub fn create(verbose: bool, wait_for_device: bool) -> Box<Self> {
+        Box::new(Self::new(verbose, wait_for_device))
     }
 
     pub fn set_usb_log_level(&mut self, level: &str) {

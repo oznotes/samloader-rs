@@ -139,7 +139,6 @@ fn main() {
         "source/DownloadPitAction.cpp",
         "source/FlashAction.cpp",
         "source/Interface.cpp",
-        "source/PrintPitAction.cpp",
         "source/Utility.cpp",
     ];
 
