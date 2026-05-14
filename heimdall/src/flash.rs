@@ -19,7 +19,7 @@ use crate::version;
 use crate::FileTransferDestination;
 use crate::InitialiseResult;
 use crate::PartitionArg;
-use libpit::{PitData, PitEntry};
+use libpit::{BinaryType, DeviceType, PitData, PitEntry};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::thread::sleep;
@@ -248,10 +248,10 @@ fn flash_partitions(
                 // Size check
                 if !skip_size_check {
                     let device_type = e.device_type;
-                    if device_type == 2 || device_type == 8 {
+                    if device_type == DeviceType::MMC || device_type == DeviceType::UFS {
                         // MMC or UFS
                         let partition_size = e.block_count as u64;
-                        let block_size = if device_type == 8 { 4096 } else { 512 };
+                        let block_size = if device_type == DeviceType::UFS { 4096 } else { 512 };
                         if partition_size > 0
                             && (part_file.file_size as u64) > partition_size * block_size
                         {
@@ -293,7 +293,7 @@ fn flash_partitions(
     for mut info in partition_flash_infos {
         println!("Uploading {}", info.pit_entry.partition_name);
 
-        let destination = if info.pit_entry.binary_type == 1 {
+        let destination = if info.pit_entry.binary_type == BinaryType::CommunicationProcessor {
             FileTransferDestination::Modem
         } else {
             FileTransferDestination::Phone

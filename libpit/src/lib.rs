@@ -60,6 +60,23 @@ impl<const LEN: usize> PartialEq<&str> for FixedString<LEN> {
     }
 }
 
+#[derive(BinRead, BinWrite, PartialEq, Eq, Copy, Clone)]
+#[brw(repr = u32)]
+pub enum BinaryType {
+    ApplicationProcessor = 0,
+    CommunicationProcessor = 1,
+}
+
+#[derive(BinRead, BinWrite, PartialEq, Eq, Copy, Clone)]
+#[brw(repr = u32)]
+pub enum DeviceType {
+    OneNand = 0,
+    File = 1,
+    MMC = 2,
+    All = 3,
+    UFS = 8,
+}
+
 #[bitfield(bits = 32)]
 #[derive(BinRead, BinWrite, Copy, Clone, Default, PartialEq, Eq)]
 #[br(map = |x: u32| Self::from_bytes(x.to_le_bytes()))]
@@ -86,8 +103,8 @@ pub struct UpdateAttribute {
 #[derive(PartialEq, Eq)]
 #[brw(little)]
 pub struct PitEntry {
-    pub binary_type: u32,
-    pub device_type: u32,
+    pub binary_type: BinaryType,
+    pub device_type: DeviceType,
     pub identifier: u32,
     pub attributes: Attribute,
     pub update_attributes: UpdateAttribute,
@@ -184,21 +201,25 @@ impl PitData {
             println!("\n\n--- Entry #{} ---", i);
 
             let binary_type_str = match entry.binary_type {
-                0 => "AP",
-                1 => "CP",
-                _ => "Unknown",
+                BinaryType::ApplicationProcessor => "AP",
+                BinaryType::CommunicationProcessor => "CP",
             };
-            println!("Binary Type: {} ({})", entry.binary_type, binary_type_str);
+            println!(
+                "Binary Type: {} ({})",
+                entry.binary_type as u32, binary_type_str
+            );
 
             let device_type_str = match entry.device_type {
-                0 => "OneNAND",
-                1 => "File/FAT",
-                2 => "MMC",
-                3 => "All (?)",
-                8 => "UFS",
-                _ => "Unknown",
+                DeviceType::OneNand => "OneNAND",
+                DeviceType::File => "File/FAT",
+                DeviceType::MMC => "MMC",
+                DeviceType::All => "All (?)",
+                DeviceType::UFS => "UFS",
             };
-            println!("Device Type: {} ({})", entry.device_type, device_type_str);
+            println!(
+                "Device Type: {} ({})",
+                entry.device_type as u32, device_type_str
+            );
 
             println!("Identifier: {}", entry.identifier);
 

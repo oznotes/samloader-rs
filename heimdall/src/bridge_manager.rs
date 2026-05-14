@@ -16,7 +16,7 @@
 use crate::packets;
 use crate::{print_error, print_warning};
 use crate::{FileTransferDestination, InitialiseResult};
-use libpit::PitData;
+use libpit::{DeviceType, PitData};
 use rusb::{Context, DeviceHandle, LogLevel, UsbContext};
 use std::time::Duration;
 
@@ -927,7 +927,7 @@ impl BridgeManager {
         reader: &mut R,
         file_size: u32,
         destination: FileTransferDestination,
-        device_type: u32,
+        device_type: DeviceType,
         file_identifier: u32,
     ) -> bool {
         // Start file transfer
@@ -1150,13 +1150,13 @@ impl BridgeManager {
                 FileTransferDestination::Modem => packets::EndModemFileTransferPacket::create(
                     sequence_effective_byte_count,
                     0,
-                    device_type,
+                    device_type as u32,
                     is_last_sequence,
                 ),
                 FileTransferDestination::Phone => packets::EndPhoneFileTransferPacket::create(
                     sequence_effective_byte_count,
                     0,
-                    device_type,
+                    device_type as u32,
                     file_identifier,
                     is_last_sequence,
                 ),
