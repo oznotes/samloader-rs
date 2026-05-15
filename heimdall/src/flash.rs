@@ -29,10 +29,10 @@ struct PartitionFile {
     file_size: u64,
 }
 
-struct PartitionFlashInfo<'a> {
-    pit_entry: &'a PitEntry,
-    file: File,
-    file_size: u64,
+pub(crate) struct PartitionFlashInfo<'a> {
+    pub(crate) pit_entry: &'a PitEntry,
+    pub(crate) file: File,
+    pub(crate) file_size: u64,
 }
 
 pub(crate) fn action_flash(
@@ -282,10 +282,9 @@ fn flash_partitions(
         println!("PIT upload successful\n");
     }
 
-    for mut info in partition_flash_infos {
+    for info in partition_flash_infos {
         println!("Uploading {}", info.pit_entry.partition_name);
-
-        bridge_manager.send_file_from_reader(&mut info.file, info.file_size, info.pit_entry)?;
+        bridge_manager.send_file(&info)?;
         println!("{} upload successful\n", info.pit_entry.partition_name);
     }
 

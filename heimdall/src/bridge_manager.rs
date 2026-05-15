@@ -15,17 +15,10 @@
 
 use crate::packets;
 use crate::{print_error, print_warning};
-use libpit::{BinaryType, PitData, PitEntry};
+use libpit::{BinaryType, PitData};
 use rusb::{Context, DeviceHandle, LogLevel, UsbContext};
+use std::io::Read;
 use std::time::Duration;
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-enum EmptyTransferMode {
-    None = 0x0,
-    Before = 0x1,
-    After = 0x2,
-    BeforeAndAfter = 0x3,
-}
 
 pub(crate) struct BridgeManager {
     verbose: bool,
@@ -360,31 +353,29 @@ impl BridgeManager {
             }
         }
 
-        self.send_bulk_transfer(b"ODIN", 1000, true)
-            .then_some(())
-            .ok_or_else(|| "Failed to send handshake!".to_string())?;
+        self.send_packet(&packets::HandshakePacket::new(), 1000)
+            .map_err(|_| "Failed to send handshake!".to_string())?;
 
-        let mut data_buffer = [0u8; 1024];
-        let data_transferred = self.receive_bulk_transfer(&mut data_buffer, 1000, true);
+        let response = self
+            .receive_packet::<packets::HandshakeResponse>(1000)
+            .map_err(|_| {
+                "Unexpected handshake response!\nFailed to receive handshake response.".to_string()
+            })?;
 
-        if data_transferred == 4 && &data_buffer[0..4] == b"LOKE" {
-            println!("Protocol initialisation successful.\n");
-            Ok(())
-        } else {
-            if self.verbose {
-                if data_transferred >= 0 {
+        match response {
+            packets::HandshakeResponse::Loke => {
+                println!("Protocol initialisation successful.\n");
+                Ok(())
+            }
+            packets::HandshakeResponse::Unknown(raw_data) => {
+                if self.verbose {
                     return Err(format!(
                         "Unexpected handshake response!\nExpected: \"LOKE\"\nReceived: \"{}\"",
-                        String::from_utf8_lossy(&data_buffer[0..data_transferred as usize])
+                        String::from_utf8_lossy(&raw_data)
                     ));
-                } else {
-                    return Err(
-                        "Unexpected handshake response!\nFailed to receive handshake response."
-                            .to_string(),
-                    );
                 }
+                Err("Unexpected handshake response!".to_string())
             }
-            Err("Unexpected handshake response!".to_string())
         }
     }
 
@@ -403,10 +394,11 @@ impl BridgeManager {
         println!("Beginning session...");
 
         let packet = packets::OutboundPacket::begin_session();
-        self.send_packet(&packet, 3000, EmptyTransferMode::After)
+        self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to begin session!".to_string())?;
+        self.send_empty_transfer();
 
-        let response = self.receive_packet(3000, EmptyTransferMode::None)?;
+        let response = self.receive_packet::<packets::Response>(3000)?;
 
         if response.response_type != packets::RESPONSE_TYPE_SESSION_SETUP {
             return Err("Failed to unpack session setup response!".to_string());
@@ -422,10 +414,11 @@ impl BridgeManager {
             self.file_transfer_sequence_max_length = 30;
 
             let packet = packets::OutboundPacket::file_part_size(self.file_transfer_packet_size);
-            self.send_packet(&packet, 3000, EmptyTransferMode::After)
+            self.send_packet(&packet, 3000)
                 .map_err(|_| "Failed to send file part size packet!".to_string())?;
+            self.send_empty_transfer();
 
-            let response = self.receive_packet(3000, EmptyTransferMode::None)?;
+            let response = self.receive_packet::<packets::Response>(3000)?;
 
             if response.response_type != packets::RESPONSE_TYPE_SESSION_SETUP {
                 return Err("Failed to unpack file part size response!".to_string());
@@ -445,12 +438,12 @@ impl BridgeManager {
     pub(crate) fn end_session(&self) -> Result<(), String> {
         println!("Ending session...");
 
-        let packet = packets::OutboundPacket::end_session(0); // kRequestEndSession
-        self.send_packet(&packet, 3000, EmptyTransferMode::After)
+        let packet = packets::OutboundPacket::end_session();
+        self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send end session packet!".to_string())?;
 
         let response = self
-            .receive_packet(3000, EmptyTransferMode::None)
+            .receive_packet::<packets::Response>(3000)
             .map_err(|_| "Failed to receive session end confirmation!".to_string())?;
 
         if response.response_type != packets::RESPONSE_TYPE_END_SESSION {
@@ -459,12 +452,12 @@ impl BridgeManager {
 
         println!("Rebooting device...");
 
-        let packet = packets::OutboundPacket::end_session(1); // kRequestRebootDevice
-        self.send_packet(&packet, 3000, EmptyTransferMode::After)
+        let packet = packets::OutboundPacket::reboot_device();
+        self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send reboot device packet!".to_string())?;
 
         let response = self
-            .receive_packet(3000, EmptyTransferMode::None)
+            .receive_packet::<packets::Response>(3000)
             .map_err(|_| "Failed to receive reboot confirmation!".to_string())?;
 
         if response.response_type != packets::RESPONSE_TYPE_END_SESSION {
@@ -480,50 +473,32 @@ impl BridgeManager {
             None => return false,
         };
 
-        let mut result = handle.write_bulk(
-            self.out_endpoint,
-            data,
-            Duration::from_millis(timeout as u64),
-        );
+        let max_attempts = if retry { 6 } else { 1 };
+        for attempt in 0..max_attempts {
+            if attempt > 0 {
+                if self.verbose {
+                    println!(" Retrying...");
+                }
+                std::thread::sleep(Duration::from_millis(250 * attempt));
+            }
 
-        if result.is_err() && retry {
-            let retry_delay = 250;
-            if self.verbose {
+            let result = handle.write_bulk(
+                self.out_endpoint,
+                data,
+                Duration::from_millis(timeout as u64),
+            );
+
+            if let Ok(transferred) = result { return transferred == data.len() };
+
+            if self.verbose && retry {
                 print_warning!(
                     "libusb error {} whilst sending bulk transfer.",
                     result.as_ref().unwrap_err()
                 );
             }
-
-            for i in 0..5 {
-                if self.verbose {
-                    println!(" Retrying...");
-                }
-                std::thread::sleep(Duration::from_millis(retry_delay * (i + 1)));
-                result = handle.write_bulk(
-                    self.out_endpoint,
-                    data,
-                    Duration::from_millis(timeout as u64),
-                );
-                if result.is_ok() {
-                    break;
-                }
-                if self.verbose {
-                    print_warning!(
-                        "libusb error {} whilst sending bulk transfer.",
-                        result.as_ref().unwrap_err()
-                    );
-                }
-            }
-            if self.verbose {
-                println!();
-            }
         }
 
-        match result {
-            Ok(transferred) => transferred == data.len(),
-            Err(_) => false,
-        }
+        false
     }
 
     fn receive_bulk_transfer(&self, data: &mut [u8], timeout: i32, retry: bool) -> i32 {
@@ -532,143 +507,64 @@ impl BridgeManager {
             None => return -1,
         };
 
-        let mut result = handle.read_bulk(
-            self.in_endpoint,
-            data,
-            Duration::from_millis(timeout as u64),
-        );
+        let max_attempts = if retry { 6 } else { 1 };
 
-        if result.is_err() && retry {
-            let retry_delay = 250;
-            if self.verbose {
+        for attempt in 0..max_attempts {
+            if attempt > 0 {
+                if self.verbose {
+                    println!(" Retrying...");
+                }
+                std::thread::sleep(Duration::from_millis(250 * attempt));
+            }
+
+            let result = handle.read_bulk(
+                self.in_endpoint,
+                data,
+                Duration::from_millis(timeout as u64),
+            );
+
+            if let Ok(transferred) = result { return transferred as i32 };
+
+            if self.verbose && retry {
                 print_warning!(
                     "libusb error {} whilst receiving bulk transfer.",
                     result.as_ref().unwrap_err()
                 );
             }
-
-            for i in 0..5 {
-                if self.verbose {
-                    println!(" Retrying...");
-                }
-                std::thread::sleep(Duration::from_millis(retry_delay * (i + 1)));
-                result = handle.read_bulk(
-                    self.in_endpoint,
-                    data,
-                    Duration::from_millis(timeout as u64),
-                );
-                if result.is_ok() {
-                    break;
-                }
-                if self.verbose {
-                    print_warning!(
-                        "libusb error {} whilst receiving bulk transfer.",
-                        result.as_ref().unwrap_err()
-                    );
-                }
-            }
-            if self.verbose {
-                println!();
-            }
         }
+        -1
+    }
 
-        match result {
-            Ok(transferred) => transferred as i32,
-            Err(_) => -1,
+    fn send_empty_transfer(&self) {
+        if !self.send_bulk_transfer(&[], 100, false) && self.verbose {
+            print_warning!("Empty bulk transfer failed. Continuing anyway...");
         }
     }
 
-    fn send_raw_packet(
-        &self,
-        packet: &[u8],
-        timeout: i32,
-        empty_transfer_mode: EmptyTransferMode,
-    ) -> Result<(), ()> {
-        if (empty_transfer_mode as u32) & (EmptyTransferMode::Before as u32) != 0
-            && !self.send_bulk_transfer(&[], 100, false)
-            && self.verbose
-        {
-            print_warning!(
-                "Empty bulk transfer before sending packet failed. Continuing anyway..."
-            );
+    fn receive_empty_transfer(&self) {
+        if self.receive_bulk_transfer(&mut [], 100, false) < 0 && self.verbose {
+            print_warning!("Empty bulk transfer failed. Continuing anyway...");
         }
+    }
 
-        if !self.send_bulk_transfer(packet, timeout, true) {
+    fn send_packet(&self, packet: &impl packets::Packet, timeout: i32) -> Result<(), ()> {
+        let packet_bytes = packet.pack();
+        if !self.send_bulk_transfer(&packet_bytes, timeout, true) {
             return Err(());
         }
-
-        if (empty_transfer_mode as u32) & (EmptyTransferMode::After as u32) != 0
-            && !self.send_bulk_transfer(&[], 100, false)
-            && self.verbose
-        {
-            print_warning!("Empty bulk transfer after sending packet failed. Continuing anyway...");
-        }
-
         Ok(())
     }
 
-    fn send_packet(
-        &self,
-        packet: &packets::OutboundPacket,
-        timeout: i32,
-        empty_transfer_mode: EmptyTransferMode,
-    ) -> Result<(), ()> {
-        let packet_bytes = packet.pack();
-        self.send_raw_packet(&packet_bytes, timeout, empty_transfer_mode)
-    }
-
-    fn receive_raw_packet(
-        &self,
-        packet: &mut [u8],
-        timeout: i32,
-        empty_transfer_mode: EmptyTransferMode,
-    ) -> Result<(), String> {
-        if (empty_transfer_mode as u32) & (EmptyTransferMode::Before as u32) != 0
-            && self.receive_bulk_transfer(&mut [], 100, false) < 0
-            && self.verbose
-        {
-            print_warning!(
-                "Empty bulk transfer before receiving packet failed. Continuing anyway..."
-            );
-        }
-
-        let received_size = self.receive_bulk_transfer(packet, timeout, true);
+    fn receive_packet<T: packets::InboundPacket>(&self, timeout: i32) -> Result<T, String> {
+        let mut buffer = vec![0u8; T::SIZE];
+        let received_size = self.receive_bulk_transfer(&mut buffer, timeout, true);
 
         if received_size < 0 {
             return Err("Failed to receive packet!".to_string());
         }
 
-        if received_size as usize != packet.len() {
-            return Err(format!(
-                "Incorrect packet size received - expected size = {}, received size = {}.",
-                packet.len(),
-                received_size
-            ));
-        }
-
-        if (empty_transfer_mode as u32) & (EmptyTransferMode::After as u32) != 0
-            && self.receive_bulk_transfer(&mut [], 100, false) < 0
-            && self.verbose
-        {
-            print_warning!(
-                "Empty bulk transfer after receiving packet failed. Continuing anyway..."
-            );
-        }
-
-        Ok(())
-    }
-
-    fn receive_packet(
-        &self,
-        timeout: i32,
-        empty_transfer_mode: EmptyTransferMode,
-    ) -> Result<packets::Response, String> {
-        let mut buffer = [0u8; 8];
-        self.receive_raw_packet(&mut buffer, timeout, empty_transfer_mode)?;
-
-        let mut reader = binrw::io::Cursor::new(&buffer);
-        use binrw::BinRead;
-        packets::Response::read_le(&mut reader).map_err(|_| "Failed to unpack packet".to_string())
+        buffer.truncate(received_size as usize);
+        T::unpack(&buffer)
     }
 
     pub(crate) fn send_pit_data(&self, pit_data: &PitData) -> Result<(), String> {
@@ -676,11 +572,12 @@ impl BridgeManager {
 
         // Start file transfer
         let packet = packets::OutboundPacket::pit_file_flash();
-        self.send_packet(&packet, 3000, EmptyTransferMode::After)
+        self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to initialise PIT file transfer!".to_string())?;
+        self.send_empty_transfer();
 
         let response = self
-            .receive_packet(3000, EmptyTransferMode::None)
+            .receive_packet::<packets::Response>(3000)
             .map_err(|_| "Failed to confirm transfer initialisation!".to_string())?;
 
         if response.response_type != packets::RESPONSE_TYPE_PIT_FILE {
@@ -689,11 +586,12 @@ impl BridgeManager {
 
         // Transfer file size
         let packet = packets::OutboundPacket::flash_part_pit_file(pit_buffer_size);
-        self.send_packet(&packet, 3000, EmptyTransferMode::After)
+        self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send PIT file part information!".to_string())?;
+        self.send_empty_transfer();
 
         let response = self
-            .receive_packet(3000, EmptyTransferMode::None)
+            .receive_packet::<packets::Response>(3000)
             .map_err(|_| "Failed to confirm sending of PIT file part information!".to_string())?;
 
         if response.response_type != packets::RESPONSE_TYPE_PIT_FILE {
@@ -705,12 +603,13 @@ impl BridgeManager {
         pit_data.pack(&mut pit_buffer);
 
         // Flash pit file
-        let packet = packets::create_send_file_part_packet(&pit_buffer, pit_buffer_size);
-        self.send_raw_packet(&packet, 3000, EmptyTransferMode::After)
+        let packet = packets::FilePartPacket::new(&pit_buffer, pit_buffer_size);
+        self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send file part packet!".to_string())?;
+        self.send_empty_transfer();
 
         let response = self
-            .receive_packet(3000, EmptyTransferMode::None)
+            .receive_packet::<packets::Response>(3000)
             .map_err(|_| "Failed to receive PIT file part response!".to_string())?;
 
         if response.response_type != packets::RESPONSE_TYPE_PIT_FILE {
@@ -719,11 +618,12 @@ impl BridgeManager {
 
         // End pit file transfer
         let packet = packets::OutboundPacket::end_pit_file_transfer(pit_buffer_size);
-        self.send_packet(&packet, 3000, EmptyTransferMode::After)
+        self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send end PIT file transfer packet!".to_string())?;
+        self.send_empty_transfer();
 
         let response = self
-            .receive_packet(3000, EmptyTransferMode::None)
+            .receive_packet::<packets::Response>(3000)
             .map_err(|_| "Failed to confirm end of PIT file transfer!".to_string())?;
 
         if response.response_type != packets::RESPONSE_TYPE_PIT_FILE {
@@ -735,11 +635,12 @@ impl BridgeManager {
 
     fn receive_pit_file(&self) -> Result<Vec<u8>, String> {
         let packet = packets::OutboundPacket::pit_file_dump();
-        self.send_packet(&packet, 3000, EmptyTransferMode::After)
+        self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to request receival of PIT file!".to_string())?;
+        self.send_empty_transfer();
 
         let response = self
-            .receive_packet(3000, EmptyTransferMode::None)
+            .receive_packet::<packets::Response>(3000)
             .map_err(|_| "Failed to receive PIT file size!".to_string())?;
 
         if response.response_type != packets::RESPONSE_TYPE_PIT_FILE {
@@ -756,37 +657,25 @@ impl BridgeManager {
 
         for i in 0..transfer_count {
             let packet = packets::OutboundPacket::dump_part_pit_file(i);
-            self.send_packet(&packet, 3000, EmptyTransferMode::After)
+            self.send_packet(&packet, 3000)
                 .map_err(|_| format!("Failed to request PIT file part #{}!", i))?;
+            self.send_empty_transfer();
 
-            let receive_empty_transfer_mode = if i == transfer_count - 1 {
-                EmptyTransferMode::After
-            } else {
-                EmptyTransferMode::None
-            };
-
-            let mut part_buffer = [0u8; 500]; // ReceiveFilePartPacket::kDataSize
-            let received_size = self.receive_bulk_transfer(&mut part_buffer, 3000, true);
-
-            if received_size < 0 {
-                return Err(format!("Failed to receive PIT file part #{}!", i));
-            }
-
-            buffer.extend_from_slice(&part_buffer[0..received_size as usize]);
-
-            if receive_empty_transfer_mode == EmptyTransferMode::After {
-                let mut dummy = [0u8; 0];
-                let _ = self.receive_bulk_transfer(&mut dummy, 100, false);
-            }
+            let part = self
+                .receive_packet::<packets::PitDataPacket>(3000)
+                .map_err(|_| format!("Failed to receive PIT file part #{}!", i))?;
+            buffer.extend_from_slice(&part.data);
         }
+        self.receive_empty_transfer();
 
         // End file transfer
         let packet = packets::OutboundPacket::pit_file_end();
-        self.send_packet(&packet, 3000, EmptyTransferMode::After)
+        self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send request to end PIT file transfer!".to_string())?;
+        self.send_empty_transfer();
 
         let response = self
-            .receive_packet(3000, EmptyTransferMode::None)
+            .receive_packet::<packets::Response>(3000)
             .map_err(|_| "Failed to receive end PIT file transfer verification!".to_string())?;
 
         if response.response_type != packets::RESPONSE_TYPE_PIT_FILE {
@@ -808,19 +697,19 @@ impl BridgeManager {
         Ok(pit_file)
     }
 
-    pub(crate) fn send_file_from_reader<R: std::io::Read + std::io::Seek>(
-        &self,
-        reader: &mut R,
-        file_size: u64,
-        pit_entry: &PitEntry,
-    ) -> Result<(), String> {
+    pub(crate) fn send_file(&self, info: &crate::flash::PartitionFlashInfo) -> Result<(), String> {
+        let file_size = info.file_size;
+        let pit_entry = info.pit_entry;
+        let mut reader = &info.file;
+
         // Start file transfer
         let packet = packets::OutboundPacket::file_transfer_flash();
-        self.send_packet(&packet, 3000, EmptyTransferMode::After)
+        self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to initialise file transfer!".to_string())?;
+        self.send_empty_transfer();
 
         let response = self
-            .receive_packet(3000, EmptyTransferMode::None)
+            .receive_packet::<packets::Response>(3000)
             .map_err(|_| "Failed to confirm transfer initialisation!".to_string())?;
 
         if response.response_type != packets::RESPONSE_TYPE_FILE_TRANSFER {
@@ -863,11 +752,12 @@ impl BridgeManager {
 
             let packet =
                 packets::OutboundPacket::flash_part_file_transfer(sequence_total_byte_count);
-            self.send_packet(&packet, 3000, EmptyTransferMode::After)
+            self.send_packet(&packet, 3000)
                 .map_err(|_| "Failed to begin file transfer sequence!".to_string())?;
+            self.send_empty_transfer();
 
             let response = self
-                .receive_packet(3000, EmptyTransferMode::None)
+                .receive_packet::<packets::Response>(3000)
                 .map_err(|_| {
                     "Failed to confirm beginning of file transfer sequence!".to_string()
                 })?;
@@ -877,11 +767,7 @@ impl BridgeManager {
             }
 
             for file_part_index in 0..sequence_size {
-                let send_empty_transfer_mode = if file_part_index == 0 {
-                    EmptyTransferMode::None
-                } else {
-                    EmptyTransferMode::Before
-                };
+                let is_first_part = file_part_index == 0;
 
                 let packet_byte_count = if is_last_sequence
                     && file_part_index == sequence_size - 1
@@ -898,87 +784,48 @@ impl BridgeManager {
                     .read_exact(&mut file_buffer[..packet_byte_count as usize])
                     .map_err(|e| format!("Failed to read from file: {}", e))?;
 
-                let packet = packets::create_send_file_part_packet(
-                    &file_buffer,
-                    self.file_transfer_packet_size,
-                );
-                self.send_raw_packet(&packet, 3000, send_empty_transfer_mode)
-                    .map_err(|_| "Failed to send file part packet!".to_string())?;
+                let mut success = false;
+                for retry in 0..5 {
+                    if retry > 0 {
+                        println!("\nRetrying...");
+                    }
 
-                // Response
-                let response_result = self.receive_packet(
-                    self.file_transfer_sequence_timeout as i32,
-                    EmptyTransferMode::None,
-                );
-                let mut success = response_result.is_ok();
+                    let packet =
+                        packets::FilePartPacket::new(&file_buffer, self.file_transfer_packet_size);
+                    if is_first_part {
+                        self.send_empty_transfer();
+                    }
 
-                if success {
-                    let response = response_result.unwrap();
-                    let received_part_index =
-                        if response.response_type == packets::RESPONSE_TYPE_SEND_FILE_PART {
-                            response.value
-                        } else {
-                            success = false;
-                            0
-                        };
-                    if success && received_part_index != file_part_index {
-                        println!();
-                        return Err(format!(
-                            "Expected file part index: {} Received: {}",
-                            file_part_index, received_part_index
-                        ));
+                    if self.send_packet(&packet, 3000).is_err() {
+                        continue;
+                    }
+
+                    // Response
+                    match self.receive_packet::<packets::Response>(
+                        self.file_transfer_sequence_timeout as i32,
+                    ) {
+                        Ok(response)
+                            if response.response_type == packets::RESPONSE_TYPE_SEND_FILE_PART =>
+                        {
+                            if response.value == file_part_index {
+                                success = true;
+                                break;
+                            } else if retry == 0 {
+                                // Only print the mismatch warning on the first attempt
+                                println!();
+                                return Err(format!(
+                                    "Expected file part index: {} Received: {}",
+                                    file_part_index, response.value
+                                ));
+                            }
+                        }
+                        _ => {}
                     }
                 }
 
                 if !success {
-                    let mut retry_success = false;
-                    for _ in 0..4 {
-                        println!("\nRetrying...");
-
-                        // Rewind reader pointer
-                        reader
-                            .seek(std::io::SeekFrom::Start(bytes_transferred))
-                            .map_err(|e| format!("Failed to seek in file: {}", e))?;
-                        reader
-                            .read_exact(&mut file_buffer[..packet_byte_count as usize])
-                            .map_err(|e| format!("Failed to read from file: {}", e))?;
-
-                        let packet = packets::create_send_file_part_packet(
-                            &file_buffer,
-                            self.file_transfer_packet_size,
-                        );
-                        if self
-                            .send_raw_packet(&packet, 3000, send_empty_transfer_mode)
-                            .is_err()
-                        {
-                            continue;
-                        }
-
-                        let res = self.receive_packet(
-                            self.file_transfer_sequence_timeout as i32,
-                            EmptyTransferMode::None,
-                        );
-
-                        if let Ok(response) = res {
-                            let received_part_index = if response.response_type
-                                == packets::RESPONSE_TYPE_SEND_FILE_PART
-                            {
-                                response.value
-                            } else {
-                                success = false;
-                                0
-                            };
-                            if success && received_part_index == file_part_index {
-                                retry_success = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if !retry_success {
-                        println!();
-                        return Err("Failed to receive file part response!".to_string());
-                    }
+                    println!();
+                    return Err("Failed to receive file part response!".to_string());
                 }
 
                 bytes_transferred += packet_byte_count as u64;
@@ -1019,14 +866,13 @@ impl BridgeManager {
                 }
             };
 
-            self.send_packet(&packet, 3000, EmptyTransferMode::BeforeAndAfter)
+            self.send_empty_transfer();
+            self.send_packet(&packet, 3000)
                 .map_err(|_| "Failed to end file transfer sequence!".to_string())?;
+            self.send_empty_transfer();
 
             let response = self
-                .receive_packet(
-                    self.file_transfer_sequence_timeout as i32,
-                    EmptyTransferMode::None,
-                )
+                .receive_packet::<packets::Response>(self.file_transfer_sequence_timeout as i32)
                 .map_err(|_| "Failed to confirm end of file transfer sequence!".to_string())?;
 
             if response.response_type != packets::RESPONSE_TYPE_FILE_TRANSFER {
@@ -1039,10 +885,11 @@ impl BridgeManager {
 
     pub(crate) fn set_total_bytes(&self, total_bytes: u64) -> Result<(), String> {
         let packet = packets::OutboundPacket::total_bytes(total_bytes);
-        self.send_packet(&packet, 3000, EmptyTransferMode::After)
+        self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send total bytes packet!".to_string())?;
+        self.send_empty_transfer();
 
-        let response = self.receive_packet(3000, EmptyTransferMode::None)?;
+        let response = self.receive_packet::<packets::Response>(3000)?;
 
         if response.response_type != packets::RESPONSE_TYPE_SESSION_SETUP {
             return Err("Failed to unpack session setup response!".to_string());

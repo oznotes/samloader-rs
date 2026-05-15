@@ -34,11 +34,7 @@ pub(crate) enum OutboundPacket {
     FileTransfer(FileTransferRequest),
 
     #[brw(magic = 0x67u32)]
-    EndSession {
-        request: u32,
-        #[brw(pad_after = 1016)]
-        _padding: (),
-    },
+    EndSession(EndSessionRequest),
 }
 
 #[derive(BinWrite)]
@@ -144,6 +140,21 @@ pub(crate) enum FileTransferEnd {
     },
 }
 
+#[derive(BinWrite)]
+#[brw(little)]
+pub(crate) enum EndSessionRequest {
+    #[brw(magic = 0u32)]
+    EndSession {
+        #[brw(pad_after = 1016)]
+        _padding: (),
+    },
+    #[brw(magic = 1u32)]
+    RebootDevice {
+        #[brw(pad_after = 1016)]
+        _padding: (),
+    },
+}
+
 impl OutboundPacket {
     pub(crate) fn begin_session() -> OutboundPacket {
         OutboundPacket::Session(SessionRequest::Begin {
@@ -163,11 +174,12 @@ impl OutboundPacket {
         OutboundPacket::Session(SessionRequest::FilePartSize { size, _padding: () })
     }
 
-    pub(crate) fn end_session(request: u32) -> OutboundPacket {
-        OutboundPacket::EndSession {
-            request,
-            _padding: (),
-        }
+    pub(crate) fn end_session() -> OutboundPacket {
+        OutboundPacket::EndSession(EndSessionRequest::EndSession { _padding: () })
+    }
+
+    pub(crate) fn reboot_device() -> OutboundPacket {
+        OutboundPacket::EndSession(EndSessionRequest::RebootDevice { _padding: () })
     }
 
     pub(crate) fn pit_file_flash() -> OutboundPacket {
@@ -245,11 +257,87 @@ impl OutboundPacket {
             _padding: (),
         }))
     }
+}
 
-    pub(crate) fn pack(&self) -> Vec<u8> {
+pub(crate) trait Packet {
+    fn pack(&self) -> Vec<u8>;
+}
+
+pub(crate) trait InboundPacket: Sized {
+    const SIZE: usize;
+    fn unpack(buffer: &[u8]) -> Result<Self, String>;
+}
+
+impl Packet for OutboundPacket {
+    fn pack(&self) -> Vec<u8> {
         let mut writer = Cursor::new(Vec::with_capacity(1024));
         self.write_le(&mut writer).expect("Failed to write packet");
         writer.into_inner()
+    }
+}
+
+pub(crate) struct FilePartPacket<'a> {
+    buffer: &'a [u8],
+    size: u32,
+}
+
+impl<'a> FilePartPacket<'a> {
+    pub(crate) fn new(buffer: &'a [u8], size: u32) -> Self {
+        Self { buffer, size }
+    }
+}
+
+impl<'a> Packet for FilePartPacket<'a> {
+    fn pack(&self) -> Vec<u8> {
+        let mut data = vec![0u8; self.size as usize];
+        let bytes_to_copy = std::cmp::min(self.buffer.len(), self.size as usize);
+        data[..bytes_to_copy].copy_from_slice(&self.buffer[..bytes_to_copy]);
+        data
+    }
+}
+
+pub(crate) struct HandshakePacket;
+
+impl HandshakePacket {
+    pub(crate) fn new() -> Self {
+        Self
+    }
+}
+
+impl Packet for HandshakePacket {
+    fn pack(&self) -> Vec<u8> {
+        b"ODIN".to_vec()
+    }
+}
+
+#[derive(BinRead)]
+#[brw(little)]
+pub(crate) enum HandshakeResponse {
+    #[br(magic = b"LOKE")]
+    Loke,
+    Unknown(#[br(parse_with = binrw::helpers::until_eof)] Vec<u8>),
+}
+
+impl InboundPacket for HandshakeResponse {
+    const SIZE: usize = 1024;
+
+    fn unpack(buffer: &[u8]) -> Result<Self, String> {
+        let mut reader = Cursor::new(buffer);
+        Self::read(&mut reader).map_err(|_| "Failed to unpack packet".to_string())
+    }
+}
+
+pub(crate) struct PitDataPacket {
+    pub data: Vec<u8>,
+}
+
+impl InboundPacket for PitDataPacket {
+    const SIZE: usize = 500;
+
+    fn unpack(buffer: &[u8]) -> Result<Self, String> {
+        Ok(Self {
+            data: buffer.to_vec(),
+        })
     }
 }
 
@@ -260,9 +348,18 @@ pub(crate) struct Response {
     pub value: u32,
 }
 
-pub(crate) fn create_send_file_part_packet(buffer: &[u8], size: u32) -> Vec<u8> {
-    let mut data = vec![0u8; size as usize];
-    let bytes_to_copy = std::cmp::min(buffer.len(), size as usize);
-    data[..bytes_to_copy].copy_from_slice(&buffer[..bytes_to_copy]);
-    data
+impl InboundPacket for Response {
+    const SIZE: usize = 8;
+
+    fn unpack(buffer: &[u8]) -> Result<Self, String> {
+        if buffer.len() != Self::SIZE {
+            return Err(format!(
+                "Incorrect packet size received - expected size = {}, received size = {}.",
+                Self::SIZE,
+                buffer.len()
+            ));
+        }
+        let mut reader = Cursor::new(buffer);
+        Self::read_le(&mut reader).map_err(|_| "Failed to unpack packet".to_string())
+    }
 }
