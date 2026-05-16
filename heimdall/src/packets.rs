@@ -62,9 +62,9 @@ pub(crate) enum SessionRequest {
 #[brw(little)]
 pub(crate) enum PitFileRequest {
     #[brw(magic = 0u32)]
-    Flash {},
+    Flash,
     #[brw(magic = 1u32)]
-    Dump {},
+    Dump,
     #[brw(magic = 2u32)]
     Part(PitFilePart),
     #[brw(magic = 3u32)]
@@ -82,7 +82,7 @@ pub(crate) enum PitFilePart {
 #[brw(little)]
 pub(crate) enum FileTransferRequest {
     #[brw(magic = 0u32)]
-    Flash {},
+    Flash,
     #[brw(magic = 2u32)]
     Part { sequence_byte_count: u32 },
     #[brw(magic = 3u32)]
@@ -113,9 +113,9 @@ pub(crate) enum FileTransferEnd {
 #[brw(little)]
 pub(crate) enum EndSessionRequest {
     #[brw(magic = 0u32)]
-    EndSession {},
+    EndSession,
     #[brw(magic = 1u32)]
-    RebootDevice {},
+    RebootDevice,
 }
 
 impl RequestPacket {
@@ -134,19 +134,19 @@ impl RequestPacket {
     }
 
     pub(crate) fn end_session() -> RequestPacket {
-        RequestPacket::EndSession(EndSessionRequest::EndSession {})
+        RequestPacket::EndSession(EndSessionRequest::EndSession)
     }
 
     pub(crate) fn reboot_device() -> RequestPacket {
-        RequestPacket::EndSession(EndSessionRequest::RebootDevice {})
+        RequestPacket::EndSession(EndSessionRequest::RebootDevice)
     }
 
     pub(crate) fn pit_file_flash() -> RequestPacket {
-        RequestPacket::PitFile(PitFileRequest::Flash {})
+        RequestPacket::PitFile(PitFileRequest::Flash)
     }
 
     pub(crate) fn pit_file_dump() -> RequestPacket {
-        RequestPacket::PitFile(PitFileRequest::Dump {})
+        RequestPacket::PitFile(PitFileRequest::Dump)
     }
 
     pub(crate) fn pit_file_end() -> RequestPacket {
@@ -166,7 +166,7 @@ impl RequestPacket {
     }
 
     pub(crate) fn file_transfer_flash() -> RequestPacket {
-        RequestPacket::FileTransfer(FileTransferRequest::Flash {})
+        RequestPacket::FileTransfer(FileTransferRequest::Flash)
     }
 
     pub(crate) fn flash_part_file_transfer(sequence_byte_count: u32) -> RequestPacket {
