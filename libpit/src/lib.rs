@@ -117,6 +117,19 @@ pub struct PitEntry {
     pub fota_filename: FixedString<FOTA_FILENAME_LENGTH>,
 }
 
+impl PitEntry {
+    pub fn partition_size(&self) -> u64 {
+        let block_size = match self.device_type {
+            DeviceType::MMC => 512,
+            DeviceType::UFS => 4096,
+            _ => {
+                return 0;
+            }
+        };
+        block_size * self.block_count as u64
+    }
+}
+
 #[binrw]
 #[derive(PartialEq, Eq)]
 #[brw(little)]

@@ -243,21 +243,12 @@ fn flash_partitions(
             Some(e) => {
                 // Size check
                 if !skip_size_check {
-                    let device_type = e.device_type;
-                    if device_type == DeviceType::MMC || device_type == DeviceType::UFS {
-                        // MMC or UFS
-                        let partition_size = e.block_count as u64;
-                        let block_size = if device_type == DeviceType::UFS {
-                            4096
-                        } else {
-                            512
-                        };
-                        if partition_size > 0 && part_file.file_size > partition_size * block_size {
-                            return Err(format!(
-                                "{} partition is too small for given file. Use --skip-size-check to flash anyways.",
-                                part_file.argument_name
-                            ));
-                        }
+                    let partition_size = e.partition_size();
+                    if partition_size > 0 && part_file.file_size > partition_size {
+                        return Err(format!(
+                            "{} partition is too small for given file. Use --skip-size-check to flash anyways.",
+                            part_file.argument_name
+                        ));
                     }
                 }
 
