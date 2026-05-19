@@ -18,6 +18,7 @@ use crate::packets::RequestPacket;
 use crate::{print_error, print_warning};
 use libpit::{BinaryType, PitData};
 use rusb::{Context, DeviceHandle, LogLevel, UsbContext};
+use std::panic::Location;
 use std::time::Duration;
 
 pub(crate) struct BridgeManager {
@@ -496,7 +497,7 @@ impl BridgeManager {
                 return transferred == data.len();
             };
 
-            if self.verbose && retry {
+            if retry {
                 print_warning!(
                     "libusb error {} whilst sending bulk transfer.",
                     result.as_ref().unwrap_err()
@@ -533,7 +534,7 @@ impl BridgeManager {
                 return transferred as i32;
             };
 
-            if self.verbose && retry {
+            if retry {
                 print_warning!(
                     "libusb error {} whilst receiving bulk transfer.",
                     result.as_ref().unwrap_err()
@@ -543,15 +544,13 @@ impl BridgeManager {
         -1
     }
 
+    #[track_caller]
     fn send_empty_transfer(&self) {
-        if !self.send_bulk_transfer(&[], 100, false) && self.verbose {
-            print_warning!("Empty bulk transfer failed. Continuing anyway...");
-        }
-    }
-
-    fn receive_empty_transfer(&self) {
-        if self.receive_bulk_transfer(&mut [], 100, false) < 0 && self.verbose {
-            print_warning!("Empty bulk transfer failed. Continuing anyway...");
+        if !self.send_bulk_transfer(&[], 100, false) {
+            print_warning!(
+                "Empty bulk send failed at [{}]. Continuing anyway...",
+                Location::caller()
+            );
         }
     }
 
@@ -688,7 +687,6 @@ impl BridgeManager {
                 .map_err(|_| format!("Failed to receive PIT file part #{}!", i))?;
             buffer.extend_from_slice(&part.data);
         }
-        self.receive_empty_transfer();
 
         // End file transfer
         let packet = RequestPacket::pit_file_end();
@@ -888,7 +886,6 @@ impl BridgeManager {
         self.send_empty_transfer();
         self.send_packet(end_packet, 3000)
             .map_err(|_| "Failed to end file transfer sequence!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self
             .receive_packet::<packets::Response>(self.file_transfer_sequence_timeout as i32)
