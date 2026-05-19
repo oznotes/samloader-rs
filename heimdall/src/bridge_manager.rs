@@ -14,10 +14,10 @@
 // limitations under the License.
 
 use crate::packets;
+use crate::packets::RequestPacket;
 use crate::{print_error, print_warning};
 use libpit::{BinaryType, PitData};
 use rusb::{Context, DeviceHandle, LogLevel, UsbContext};
-use std::io::Read;
 use std::time::Duration;
 
 pub(crate) struct BridgeManager {
@@ -34,9 +34,10 @@ pub(crate) struct BridgeManager {
 
     interface_claimed: bool,
 
-    file_transfer_sequence_max_length: u32,
-    file_transfer_packet_size: u32,
+    file_transfer_sequence_max_length: usize,
+    file_transfer_packet_size: usize,
     file_transfer_sequence_timeout: u32,
+    lz4_supported: bool,
 }
 
 const VID_SAMSUNG: u16 = 0x04E8;
@@ -50,8 +51,8 @@ const SUPPORTED_DEVICES: &[(u16, u16)] = &[
     (VID_SAMSUNG, PID_DROID_CHARGE),
 ];
 
-const FILE_TRANSFER_SEQUENCE_MAX_LENGTH_DEFAULT: u32 = 800;
-const FILE_TRANSFER_PACKET_SIZE_DEFAULT: u32 = 131072;
+const FILE_TRANSFER_SEQUENCE_MAX_LENGTH_DEFAULT: usize = 800;
+const FILE_TRANSFER_PACKET_SIZE_DEFAULT: usize = 0x20000;
 const FILE_TRANSFER_SEQUENCE_TIMEOUT_DEFAULT: u32 = 30000;
 
 const USB_CLASS_CDC_DATA: u8 = 0x0A;
@@ -76,6 +77,7 @@ impl BridgeManager {
             file_transfer_sequence_max_length: FILE_TRANSFER_SEQUENCE_MAX_LENGTH_DEFAULT,
             file_transfer_packet_size: FILE_TRANSFER_PACKET_SIZE_DEFAULT,
             file_transfer_sequence_timeout: FILE_TRANSFER_SEQUENCE_TIMEOUT_DEFAULT,
+            lz4_supported: false,
         }
     }
 
@@ -393,7 +395,7 @@ impl BridgeManager {
     pub(crate) fn begin_session(&mut self) -> Result<(), String> {
         println!("Beginning session...");
 
-        let packet = packets::RequestPacket::begin_session();
+        let packet = RequestPacket::begin_session();
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to begin session!".to_string())?;
         self.send_empty_transfer();
@@ -405,15 +407,17 @@ impl BridgeManager {
         }
         let device_default_packet_size = response.value;
 
+        self.lz4_supported = (device_default_packet_size & 0x8000) != 0;
+
         println!("\nSome devices may take up to 2 minutes to respond.\nPlease be patient!\n");
         std::thread::sleep(Duration::from_millis(3000));
 
         if device_default_packet_size != 0 {
             self.file_transfer_sequence_timeout = 120000;
-            self.file_transfer_packet_size = 1048576;
+            self.file_transfer_packet_size = 0x100000;
             self.file_transfer_sequence_max_length = 30;
 
-            let packet = packets::RequestPacket::file_part_size(self.file_transfer_packet_size);
+            let packet = RequestPacket::file_part_size(self.file_transfer_packet_size as u32);
             self.send_packet(&packet, 3000)
                 .map_err(|_| "Failed to send file part size packet!".to_string())?;
             self.send_empty_transfer();
@@ -438,7 +442,7 @@ impl BridgeManager {
     pub(crate) fn end_session(&self) -> Result<(), String> {
         println!("Ending session...");
 
-        let packet = packets::RequestPacket::end_session();
+        let packet = RequestPacket::end_session();
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send end session packet!".to_string())?;
 
@@ -452,7 +456,7 @@ impl BridgeManager {
 
         println!("Rebooting device...");
 
-        let packet = packets::RequestPacket::reboot_device();
+        let packet = RequestPacket::reboot_device();
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send reboot device packet!".to_string())?;
 
@@ -589,7 +593,7 @@ impl BridgeManager {
         let pit_buffer_size = pit_data.get_padded_size();
 
         // Start file transfer
-        let packet = packets::RequestPacket::pit_file_flash();
+        let packet = RequestPacket::pit_file_flash();
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to initialise PIT file transfer!".to_string())?;
         self.send_empty_transfer();
@@ -603,7 +607,7 @@ impl BridgeManager {
         }
 
         // Transfer file size
-        let packet = packets::RequestPacket::flash_part_pit_file(pit_buffer_size);
+        let packet = RequestPacket::flash_part_pit_file(pit_buffer_size);
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send PIT file part information!".to_string())?;
         self.send_empty_transfer();
@@ -635,7 +639,7 @@ impl BridgeManager {
         }
 
         // End pit file transfer
-        let packet = packets::RequestPacket::end_pit_file_transfer(pit_buffer_size);
+        let packet = RequestPacket::end_pit_file_transfer(pit_buffer_size);
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send end PIT file transfer packet!".to_string())?;
         self.send_empty_transfer();
@@ -652,7 +656,7 @@ impl BridgeManager {
     }
 
     fn receive_pit_file(&self) -> Result<Vec<u8>, String> {
-        let packet = packets::RequestPacket::pit_file_dump();
+        let packet = RequestPacket::pit_file_dump();
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to request receival of PIT file!".to_string())?;
         self.send_empty_transfer();
@@ -674,7 +678,7 @@ impl BridgeManager {
         let mut buffer = Vec::with_capacity(file_size as usize);
 
         for i in 0..transfer_count {
-            let packet = packets::RequestPacket::dump_part_pit_file(i);
+            let packet = RequestPacket::dump_part_pit_file(i);
             self.send_packet(&packet, 3000)
                 .map_err(|_| format!("Failed to request PIT file part #{}!", i))?;
             self.send_empty_transfer();
@@ -687,7 +691,7 @@ impl BridgeManager {
         self.receive_empty_transfer();
 
         // End file transfer
-        let packet = packets::RequestPacket::pit_file_end();
+        let packet = RequestPacket::pit_file_end();
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send request to end PIT file transfer!".to_string())?;
         self.send_empty_transfer();
@@ -715,13 +719,9 @@ impl BridgeManager {
         Ok(pit_file)
     }
 
-    pub(crate) fn send_file(&self, info: &crate::flash::PartitionFlashInfo) -> Result<(), String> {
-        let file_size = info.file_size;
-        let pit_entry = info.pit_entry;
-        let mut reader = &info.file;
+    pub(crate) fn send_file(&self, info: &crate::flash::FirmwareFile) -> Result<(), String> {
+        let packet = RequestPacket::file_transfer_flash();
 
-        // Start file transfer
-        let packet = packets::RequestPacket::file_transfer_flash();
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to initialise file transfer!".to_string())?;
         self.send_empty_transfer();
@@ -734,175 +734,181 @@ impl BridgeManager {
             return Err("Failed to confirm transfer initialisation!".to_string());
         }
 
-        let transfer_packet_size = self.file_transfer_packet_size as u64;
-        let transfer_sequence_max_length = self.file_transfer_sequence_max_length as u64;
+        let sequences = info.sequences(
+            self.file_transfer_packet_size,
+            self.file_transfer_sequence_max_length,
+        );
 
-        let sequence_count = file_size / (transfer_sequence_max_length * transfer_packet_size);
-        let mut last_sequence_size = self.file_transfer_sequence_max_length;
-        let partial_packet_byte_count = file_size % transfer_packet_size;
+        let mut sequences = sequences.peekable();
+        while let Some(sequence_data) = sequences.next() {
+            let start_packet = RequestPacket::flash_part_file_transfer(sequence_data.len() as u32);
 
-        let mut sequence_count = sequence_count;
+            let is_last_sequence = sequences.peek().is_none();
+            let end_packet = match info.pit_entry.binary_type {
+                BinaryType::ApplicationProcessor => RequestPacket::end_phone_file_transfer(
+                    sequence_data.len() as u32,
+                    info.pit_entry.binary_type as u32,
+                    info.pit_entry.device_type as u32,
+                    info.pit_entry.identifier,
+                    is_last_sequence,
+                ),
+                BinaryType::CommunicationProcessor => RequestPacket::end_modem_file_transfer(
+                    sequence_data.len() as u32,
+                    info.pit_entry.binary_type as u32,
+                    info.pit_entry.device_type as u32,
+                    is_last_sequence,
+                ),
+            };
 
-        if !file_size.is_multiple_of(transfer_sequence_max_length * transfer_packet_size) {
-            sequence_count += 1;
-            let last_sequence_bytes =
-                file_size % (transfer_sequence_max_length * transfer_packet_size);
-            last_sequence_size = (last_sequence_bytes / transfer_packet_size) as u32;
-            if partial_packet_byte_count != 0 {
-                last_sequence_size += 1;
+            self.send_file_sequence(&start_packet, &end_packet, sequence_data)?;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn send_lz4_file(&self, info: &crate::flash::FirmwareLz4File) -> Result<(), String> {
+        let packet = RequestPacket::lz4_file_transfer_flash();
+
+        self.send_packet(&packet, 3000)
+            .map_err(|_| "Failed to initialise file transfer!".to_string())?;
+        self.send_empty_transfer();
+
+        let response = self
+            .receive_packet::<packets::Response>(3000)
+            .map_err(|_| "Failed to confirm transfer initialisation!".to_string())?;
+
+        if response.response_type != packets::RESPONSE_TYPE_FILE_TRANSFER {
+            return Err("Failed to confirm transfer initialisation!".to_string());
+        }
+
+        let sequences = info.sequences(
+            self.file_transfer_packet_size,
+            self.file_transfer_sequence_max_length,
+        );
+
+        let mut sequences = sequences.peekable();
+        while let Some((decompressed_size, sequence_data)) = sequences.next() {
+            let start_packet =
+                RequestPacket::flash_lz4_part_file_transfer(sequence_data.len() as u32);
+
+            let is_last_sequence = sequences.peek().is_none();
+            let end_packet = match info.pit_entry.binary_type {
+                BinaryType::ApplicationProcessor => RequestPacket::end_lz4_phone_file_transfer(
+                    decompressed_size as u32,
+                    info.pit_entry.binary_type as u32,
+                    info.pit_entry.device_type as u32,
+                    info.pit_entry.identifier,
+                    is_last_sequence,
+                ),
+                BinaryType::CommunicationProcessor => RequestPacket::end_lz4_modem_file_transfer(
+                    decompressed_size as u32,
+                    info.pit_entry.binary_type as u32,
+                    info.pit_entry.device_type as u32,
+                    is_last_sequence,
+                ),
+            };
+
+            self.send_file_sequence(&start_packet, &end_packet, sequence_data)?;
+        }
+
+        Ok(())
+    }
+
+    fn send_file_sequence(
+        &self,
+        start_packet: &RequestPacket,
+        end_packet: &RequestPacket,
+        mut sequence_data: Vec<u8>,
+    ) -> Result<(), String> {
+        // Pad sequence_data to full packets
+        let remainder = sequence_data.len() % self.file_transfer_packet_size;
+        if remainder != 0 {
+            let padding = self.file_transfer_packet_size - remainder;
+            sequence_data.resize(sequence_data.len() + padding, 0);
+        }
+
+        self.send_packet(start_packet, 3000)
+            .map_err(|_| "Failed to begin file transfer sequence!".to_string())?;
+        self.send_empty_transfer();
+
+        let response = self
+            .receive_packet::<packets::Response>(3000)
+            .map_err(|_| "Failed to confirm beginning of file transfer sequence!".to_string())?;
+
+        if response.response_type != packets::RESPONSE_TYPE_FILE_TRANSFER {
+            return Err("Failed to confirm beginning of file transfer sequence!".to_string());
+        }
+
+        for (file_part_index, file_buffer) in sequence_data
+            .chunks(self.file_transfer_packet_size)
+            .enumerate()
+        {
+            let is_first_part = file_part_index == 0;
+
+            let mut success = false;
+            for retry in 0..5 {
+                if retry > 0 {
+                    println!("\nRetrying...");
+                }
+
+                let packet = packets::FilePartPacket::new(
+                    file_buffer,
+                    self.file_transfer_packet_size as u32,
+                );
+
+                if is_first_part {
+                    self.send_empty_transfer();
+                }
+
+                if self.send_packet(&packet, 3000).is_err() {
+                    continue;
+                }
+
+                match self
+                    .receive_packet::<packets::Response>(self.file_transfer_sequence_timeout as i32)
+                {
+                    Ok(response)
+                        if response.response_type == packets::RESPONSE_TYPE_SEND_FILE_PART =>
+                    {
+                        if response.value as usize == file_part_index {
+                            success = true;
+                            break;
+                        } else if retry == 0 {
+                            println!();
+                            return Err(format!(
+                                "Expected file part index: {} Received: {}",
+                                file_part_index, response.value
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if !success {
+                println!();
+                return Err("Failed to receive file part response!".to_string());
             }
         }
 
-        let mut bytes_transferred = 0u64;
-        let mut previous_percent = 0u32;
-        println!("0%");
+        self.send_empty_transfer();
+        self.send_packet(end_packet, 3000)
+            .map_err(|_| "Failed to end file transfer sequence!".to_string())?;
+        self.send_empty_transfer();
 
-        let mut file_buffer = vec![0u8; self.file_transfer_packet_size as usize];
+        let response = self
+            .receive_packet::<packets::Response>(self.file_transfer_sequence_timeout as i32)
+            .map_err(|_| "Failed to confirm end of file transfer sequence!".to_string())?;
 
-        for sequence_index in 0..sequence_count {
-            let is_last_sequence = sequence_index == sequence_count - 1;
-            let sequence_size = if is_last_sequence {
-                last_sequence_size
-            } else {
-                self.file_transfer_sequence_max_length
-            };
-            let sequence_total_byte_count = sequence_size * self.file_transfer_packet_size;
-
-            let packet =
-                packets::RequestPacket::flash_part_file_transfer(sequence_total_byte_count);
-            self.send_packet(&packet, 3000)
-                .map_err(|_| "Failed to begin file transfer sequence!".to_string())?;
-            self.send_empty_transfer();
-
-            let response = self
-                .receive_packet::<packets::Response>(3000)
-                .map_err(|_| {
-                    "Failed to confirm beginning of file transfer sequence!".to_string()
-                })?;
-
-            if response.response_type != packets::RESPONSE_TYPE_FILE_TRANSFER {
-                return Err("Failed to confirm beginning of file transfer sequence!".to_string());
-            }
-
-            for file_part_index in 0..sequence_size {
-                let is_first_part = file_part_index == 0;
-
-                let packet_byte_count = if is_last_sequence
-                    && file_part_index == sequence_size - 1
-                    && partial_packet_byte_count != 0
-                {
-                    partial_packet_byte_count as u32
-                } else {
-                    self.file_transfer_packet_size
-                };
-
-                // Read data from reader
-                file_buffer.fill(0);
-                reader
-                    .read_exact(&mut file_buffer[..packet_byte_count as usize])
-                    .map_err(|e| format!("Failed to read from file: {}", e))?;
-
-                let mut success = false;
-                for retry in 0..5 {
-                    if retry > 0 {
-                        println!("\nRetrying...");
-                    }
-
-                    let packet =
-                        packets::FilePartPacket::new(&file_buffer, self.file_transfer_packet_size);
-                    if is_first_part {
-                        self.send_empty_transfer();
-                    }
-
-                    if self.send_packet(&packet, 3000).is_err() {
-                        continue;
-                    }
-
-                    // Response
-                    match self.receive_packet::<packets::Response>(
-                        self.file_transfer_sequence_timeout as i32,
-                    ) {
-                        Ok(response)
-                            if response.response_type == packets::RESPONSE_TYPE_SEND_FILE_PART =>
-                        {
-                            if response.value == file_part_index {
-                                success = true;
-                                break;
-                            } else if retry == 0 {
-                                // Only print the mismatch warning on the first attempt
-                                println!();
-                                return Err(format!(
-                                    "Expected file part index: {} Received: {}",
-                                    file_part_index, response.value
-                                ));
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-
-                if !success {
-                    println!();
-                    return Err("Failed to receive file part response!".to_string());
-                }
-
-                bytes_transferred += packet_byte_count as u64;
-                let current_percent =
-                    (100.0f32 * (bytes_transferred as f32 / file_size as f32)) as u32;
-
-                if current_percent != previous_percent {
-                    println!("\n{}%", current_percent);
-                    previous_percent = current_percent;
-                }
-            }
-
-            let sequence_effective_byte_count =
-                if is_last_sequence && partial_packet_byte_count != 0 {
-                    self.file_transfer_packet_size * (last_sequence_size - 1)
-                        + partial_packet_byte_count as u32
-                } else {
-                    sequence_total_byte_count
-                };
-
-            let packet = match pit_entry.binary_type {
-                BinaryType::CommunicationProcessor => {
-                    packets::RequestPacket::end_modem_file_transfer(
-                        sequence_effective_byte_count,
-                        pit_entry.binary_type as u32,
-                        pit_entry.device_type as u32,
-                        is_last_sequence,
-                    )
-                }
-                BinaryType::ApplicationProcessor => {
-                    packets::RequestPacket::end_phone_file_transfer(
-                        sequence_effective_byte_count,
-                        pit_entry.binary_type as u32,
-                        pit_entry.device_type as u32,
-                        pit_entry.identifier,
-                        is_last_sequence,
-                    )
-                }
-            };
-
-            self.send_empty_transfer();
-            self.send_packet(&packet, 3000)
-                .map_err(|_| "Failed to end file transfer sequence!".to_string())?;
-            self.send_empty_transfer();
-
-            let response = self
-                .receive_packet::<packets::Response>(self.file_transfer_sequence_timeout as i32)
-                .map_err(|_| "Failed to confirm end of file transfer sequence!".to_string())?;
-
-            if response.response_type != packets::RESPONSE_TYPE_FILE_TRANSFER {
-                return Err("Failed to confirm end of file transfer sequence!".to_string());
-            }
+        if response.response_type != packets::RESPONSE_TYPE_FILE_TRANSFER {
+            return Err("Failed to confirm end of file transfer sequence!".to_string());
         }
 
         Ok(())
     }
 
     pub(crate) fn set_total_bytes(&self, total_bytes: u64) -> Result<(), String> {
-        let packet = packets::RequestPacket::total_bytes(total_bytes);
+        let packet = RequestPacket::total_bytes(total_bytes);
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send total bytes packet!".to_string())?;
         self.send_empty_transfer();

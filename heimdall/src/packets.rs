@@ -87,6 +87,12 @@ pub(crate) enum FileTransferRequest {
     Part { sequence_byte_count: u32 },
     #[brw(magic = 3u32)]
     End(FileTransferEnd),
+    #[brw(magic = 5u32)]
+    Lz4Flash,
+    #[brw(magic = 6u32)]
+    Lz4Part { sequence_byte_count: u32 },
+    #[brw(magic = 7u32)]
+    Lz4End(FileTransferEnd),
 }
 
 #[derive(BinWrite, Debug)]
@@ -197,6 +203,46 @@ impl RequestPacket {
         is_last_sequence: bool,
     ) -> RequestPacket {
         RequestPacket::FileTransfer(FileTransferRequest::End(FileTransferEnd::Phone {
+            sequence_byte_count,
+            binary_type,
+            device_type,
+            partition_identifier,
+            is_last_sequence: if is_last_sequence { 1 } else { 0 },
+        }))
+    }
+
+    pub(crate) fn lz4_file_transfer_flash() -> RequestPacket {
+        RequestPacket::FileTransfer(FileTransferRequest::Lz4Flash)
+    }
+
+    pub(crate) fn flash_lz4_part_file_transfer(sequence_byte_count: u32) -> RequestPacket {
+        RequestPacket::FileTransfer(FileTransferRequest::Lz4Part {
+            sequence_byte_count,
+        })
+    }
+
+    pub(crate) fn end_lz4_modem_file_transfer(
+        sequence_byte_count: u32,
+        binary_type: u32,
+        device_type: u32,
+        is_last_sequence: bool,
+    ) -> RequestPacket {
+        RequestPacket::FileTransfer(FileTransferRequest::Lz4End(FileTransferEnd::Modem {
+            sequence_byte_count,
+            binary_type,
+            device_type,
+            is_last_sequence: if is_last_sequence { 1 } else { 0 },
+        }))
+    }
+
+    pub(crate) fn end_lz4_phone_file_transfer(
+        sequence_byte_count: u32,
+        binary_type: u32,
+        device_type: u32,
+        partition_identifier: u32,
+        is_last_sequence: bool,
+    ) -> RequestPacket {
+        RequestPacket::FileTransfer(FileTransferRequest::Lz4End(FileTransferEnd::Phone {
             sequence_byte_count,
             binary_type,
             device_type,
