@@ -18,7 +18,6 @@ use crate::packets::RequestPacket;
 use crate::{print_error, print_warning};
 use libpit::{BinaryType, PitData};
 use rusb::{Context, DeviceHandle, LogLevel, UsbContext};
-use std::panic::Location;
 use std::time::Duration;
 
 pub(crate) struct BridgeManager {
@@ -399,7 +398,6 @@ impl BridgeManager {
         let packet = RequestPacket::begin_session();
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to begin session!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self.receive_packet::<packets::Response>(3000)?;
 
@@ -421,7 +419,6 @@ impl BridgeManager {
             let packet = RequestPacket::file_part_size(self.file_transfer_packet_size as u32);
             self.send_packet(&packet, 3000)
                 .map_err(|_| "Failed to send file part size packet!".to_string())?;
-            self.send_empty_transfer();
 
             let response = self.receive_packet::<packets::Response>(3000)?;
 
@@ -544,16 +541,6 @@ impl BridgeManager {
         -1
     }
 
-    #[track_caller]
-    fn send_empty_transfer(&self) {
-        if !self.send_bulk_transfer(&[], 100, false) {
-            print_warning!(
-                "Empty bulk send failed at [{}]. Continuing anyway...",
-                Location::caller()
-            );
-        }
-    }
-
     fn send_packet(
         &self,
         packet: &(impl packets::OutboundPacket + std::fmt::Debug),
@@ -595,7 +582,6 @@ impl BridgeManager {
         let packet = RequestPacket::pit_file_flash();
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to initialise PIT file transfer!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self
             .receive_packet::<packets::Response>(3000)
@@ -609,7 +595,6 @@ impl BridgeManager {
         let packet = RequestPacket::flash_part_pit_file(pit_buffer_size);
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send PIT file part information!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self
             .receive_packet::<packets::Response>(3000)
@@ -627,7 +612,6 @@ impl BridgeManager {
         let packet = packets::FilePartPacket::new(&pit_buffer, pit_buffer_size);
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send file part packet!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self
             .receive_packet::<packets::Response>(3000)
@@ -641,7 +625,6 @@ impl BridgeManager {
         let packet = RequestPacket::end_pit_file_transfer(pit_buffer_size);
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send end PIT file transfer packet!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self
             .receive_packet::<packets::Response>(3000)
@@ -658,7 +641,6 @@ impl BridgeManager {
         let packet = RequestPacket::pit_file_dump();
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to request receival of PIT file!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self
             .receive_packet::<packets::Response>(3000)
@@ -680,7 +662,6 @@ impl BridgeManager {
             let packet = RequestPacket::dump_part_pit_file(i);
             self.send_packet(&packet, 3000)
                 .map_err(|_| format!("Failed to request PIT file part #{}!", i))?;
-            self.send_empty_transfer();
 
             let part = self
                 .receive_packet::<packets::PitDataPacket>(3000)
@@ -692,7 +673,6 @@ impl BridgeManager {
         let packet = RequestPacket::pit_file_end();
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send request to end PIT file transfer!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self
             .receive_packet::<packets::Response>(3000)
@@ -726,7 +706,6 @@ impl BridgeManager {
 
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to initialise file transfer!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self
             .receive_packet::<packets::Response>(3000)
@@ -775,7 +754,6 @@ impl BridgeManager {
 
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to initialise file transfer!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self
             .receive_packet::<packets::Response>(3000)
@@ -832,7 +810,6 @@ impl BridgeManager {
 
         self.send_packet(start_packet, 3000)
             .map_err(|_| "Failed to begin file transfer sequence!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self
             .receive_packet::<packets::Response>(3000)
@@ -846,8 +823,6 @@ impl BridgeManager {
             .chunks(self.file_transfer_packet_size)
             .enumerate()
         {
-            let is_first_part = file_part_index == 0;
-
             let mut success = false;
             for retry in 0..5 {
                 if retry > 0 {
@@ -858,10 +833,6 @@ impl BridgeManager {
                     file_buffer,
                     self.file_transfer_packet_size as u32,
                 );
-
-                if is_first_part {
-                    self.send_empty_transfer();
-                }
 
                 if self.send_packet(&packet, 3000).is_err() {
                     continue;
@@ -894,7 +865,6 @@ impl BridgeManager {
             }
         }
 
-        self.send_empty_transfer();
         self.send_packet(end_packet, 3000)
             .map_err(|_| "Failed to end file transfer sequence!".to_string())?;
 
@@ -913,7 +883,6 @@ impl BridgeManager {
         let packet = RequestPacket::total_bytes(total_bytes);
         self.send_packet(&packet, 3000)
             .map_err(|_| "Failed to send total bytes packet!".to_string())?;
-        self.send_empty_transfer();
 
         let response = self.receive_packet::<packets::Response>(3000)?;
 
