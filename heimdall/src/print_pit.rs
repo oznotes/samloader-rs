@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::bridge_manager::BridgeManager;
+use crate::odin_manager::OdinManager;
 use crate::print_error;
 use crate::version;
 use libpit::PitData;
@@ -52,15 +52,15 @@ pub(crate) fn action_print_pit(file: &str, verbose: bool, wait: bool, usb_log_le
             }
         }
     } else {
-        let mut bridge_manager = BridgeManager::new(verbose, wait);
-        bridge_manager.set_usb_log_level(usb_log_level);
+        let mut odin_manager = OdinManager::new(verbose, wait);
+        odin_manager.set_usb_log_level(usb_log_level);
 
-        if let Err(e) = bridge_manager.initialise() {
+        if let Err(e) = odin_manager.initialise() {
             print_error!("{}", e);
             return 1;
         }
 
-        if let Err(e) = bridge_manager.begin_session() {
+        if let Err(e) = odin_manager.begin_session() {
             print_error!("{}", e);
             return 1;
         }
@@ -68,7 +68,7 @@ pub(crate) fn action_print_pit(file: &str, verbose: bool, wait: bool, usb_log_le
         let mut success = true;
         let mut device_pit_data = None;
 
-        match bridge_manager.download_pit_file() {
+        match odin_manager.download_pit_file() {
             Ok(device_pit) => match PitData::new(&device_pit) {
                 Ok(pit_data) => {
                     device_pit_data = Some(pit_data);
@@ -88,7 +88,7 @@ pub(crate) fn action_print_pit(file: &str, verbose: bool, wait: bool, usb_log_le
             println!("{}", pit_data);
         }
 
-        if let Err(e) = bridge_manager.end_session() {
+        if let Err(e) = odin_manager.end_session() {
             print_error!("{}", e);
             success = false;
         }

@@ -13,13 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::bridge_manager::BridgeManager;
+use crate::odin_manager::OdinManager;
 
 pub(crate) fn action_detect(verbose: bool, wait: bool, usb_log_level: &str) -> i32 {
-    let mut bridge_manager = BridgeManager::new(verbose, wait);
-    bridge_manager.set_usb_log_level(usb_log_level);
+    let mut odin_manager = OdinManager::new(verbose, wait);
+    odin_manager.set_usb_log_level(usb_log_level);
 
-    if let Err(e) = bridge_manager.detect_device() {
+    if let Err(e) = odin_manager.detect_device() {
         eprintln!("ERROR: {}", e);
         1
     } else {

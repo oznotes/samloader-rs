@@ -226,7 +226,7 @@ pub(crate) fn action_tar_flash(
         return 1;
     }
 
-    let (bridge_manager, pit_data) = match crate::flash::init_session_and_get_pit(
+    let (odin_manager, pit_data) = match crate::flash::init_session_and_get_pit(
         verbose,
         wait,
         usb_log_level,
@@ -302,7 +302,7 @@ pub(crate) fn action_tar_flash(
         };
 
         // LZ4 compatibility check
-        if is_lz4.is_some() && !bridge_manager.is_lz4_supported() {
+        if is_lz4.is_some() && !odin_manager.is_lz4_supported() {
             print_error!(
                 "Device does not support LZ4 compression, but file \"{}\" is LZ4 compressed.",
                 entry.original_name
@@ -344,7 +344,7 @@ pub(crate) fn action_tar_flash(
     }
 
     crate::flash::execute_flash_pipeline(
-        bridge_manager,
+        odin_manager,
         &pit_data,
         partition_infos,
         repartition,

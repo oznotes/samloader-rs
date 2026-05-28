@@ -16,7 +16,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub(crate) enum BridgeError {
+pub(crate) enum OdinError {
     #[error("Failed to detect compatible download-mode device.")]
     DeviceNotFound,
 
@@ -118,10 +118,4 @@ pub(crate) enum BridgeError {
 
     #[error("{0}")]
     ParseError(String),
-}
-
-impl From<String> for BridgeError {
-    fn from(msg: String) -> Self {
-        BridgeError::ParseError(msg)
-    }
 }

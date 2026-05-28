@@ -13,10 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::bridge_manager::BridgeManager;
 use crate::firmware::{
     FirmwareFile, FirmwareInfo, FirmwareLz4File, FirmwareSource, Lz4FrameHeader,
 };
+use crate::odin_manager::OdinManager;
 use crate::print_error;
 use crate::version;
 use crate::PartitionArg;
@@ -32,19 +32,19 @@ pub(crate) fn init_session_and_get_pit(
     wait: bool,
     usb_log_level: &str,
     pit_file_bytes: Option<&[u8]>,
-) -> Result<(BridgeManager, PitData), i32> {
+) -> Result<(OdinManager, PitData), i32> {
     version::print_release_info();
     sleep(Duration::from_millis(1000));
 
-    let mut bridge_manager = BridgeManager::new(verbose, wait);
-    bridge_manager.set_usb_log_level(usb_log_level);
+    let mut odin_manager = OdinManager::new(verbose, wait);
+    odin_manager.set_usb_log_level(usb_log_level);
 
-    if let Err(e) = bridge_manager.initialise() {
+    if let Err(e) = odin_manager.initialise() {
         print_error!("{}", e);
         return Err(1);
     }
 
-    if let Err(e) = bridge_manager.begin_session() {
+    if let Err(e) = odin_manager.begin_session() {
         print_error!("{}", e);
         return Err(1);
     }
@@ -58,7 +58,7 @@ pub(crate) fn init_session_and_get_pit(
             }
         }
     } else {
-        match bridge_manager.download_pit_file() {
+        match odin_manager.download_pit_file() {
             Ok(pit_buffer) => match PitData::new(&pit_buffer) {
                 Ok(device_pit_data) => Some(device_pit_data),
                 Err(_) => {
@@ -77,11 +77,11 @@ pub(crate) fn init_session_and_get_pit(
         return Err(1);
     };
 
-    Ok((bridge_manager, pit_data))
+    Ok((odin_manager, pit_data))
 }
 
 pub(crate) fn execute_flash_pipeline(
-    bridge_manager: BridgeManager,
+    odin_manager: OdinManager,
     pit_data: &PitData,
     mut partition_infos: Vec<FirmwareInfo>,
     repartition: bool,
@@ -102,14 +102,14 @@ pub(crate) fn execute_flash_pipeline(
         }
     }
 
-    if let Err(e) = bridge_manager.set_total_bytes(total_bytes) {
+    if let Err(e) = odin_manager.set_total_bytes(total_bytes) {
         print_error!("{}", e);
         return 1;
     }
 
     if repartition {
         println!("Uploading PIT");
-        if let Err(e) = bridge_manager.send_pit_data(pit_data) {
+        if let Err(e) = odin_manager.send_pit_data(pit_data) {
             print_error!("{}", e);
             return 1;
         }
@@ -120,7 +120,7 @@ pub(crate) fn execute_flash_pipeline(
         match info {
             FirmwareInfo::Normal(f) => {
                 println!("Uploading {}", f.pit_entry.partition_name);
-                if let Err(e) = bridge_manager.send_file(f) {
+                if let Err(e) = odin_manager.send_file(f) {
                     print_error!("{}", e);
                     return 1;
                 }
@@ -128,7 +128,7 @@ pub(crate) fn execute_flash_pipeline(
             }
             FirmwareInfo::Lz4(f) => {
                 println!("Uploading {}", f.pit_entry.partition_name);
-                if let Err(e) = bridge_manager.send_lz4_file(f) {
+                if let Err(e) = odin_manager.send_lz4_file(f) {
                     print_error!("{}", e);
                     return 1;
                 }
@@ -137,7 +137,7 @@ pub(crate) fn execute_flash_pipeline(
         }
     }
 
-    if let Err(e) = bridge_manager.end_session() {
+    if let Err(e) = odin_manager.end_session() {
         print_error!("{}", e);
         return 1;
     }
@@ -177,7 +177,7 @@ pub(crate) fn action_flash(
         pit_file_bytes = Some(buffer);
     }
 
-    let (bridge_manager, pit_data) =
+    let (odin_manager, pit_data) =
         match init_session_and_get_pit(verbose, wait, usb_log_level, pit_file_bytes.as_deref()) {
             Ok(res) => res,
             Err(code) => return code,
@@ -281,7 +281,7 @@ pub(crate) fn action_flash(
     }
 
     execute_flash_pipeline(
-        bridge_manager,
+        odin_manager,
         &pit_data,
         partition_infos,
         repartition,

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::bridge_manager::BridgeManager;
+use crate::odin_manager::OdinManager;
 use crate::print_error;
 use crate::version;
 use std::fs::File;
@@ -46,22 +46,22 @@ pub(crate) fn action_download_pit(
     };
 
     // Download PIT file from device.
-    let mut bridge_manager = BridgeManager::new(verbose, wait);
-    bridge_manager.set_usb_log_level(usb_log_level);
+    let mut odin_manager = OdinManager::new(verbose, wait);
+    odin_manager.set_usb_log_level(usb_log_level);
 
-    if let Err(e) = bridge_manager.initialise() {
+    if let Err(e) = odin_manager.initialise() {
         print_error!("{}", e);
         return 1;
     }
 
-    if let Err(e) = bridge_manager.begin_session() {
+    if let Err(e) = odin_manager.begin_session() {
         print_error!("{}", e);
         return 1;
     }
 
     let mut success = true;
 
-    match bridge_manager.download_pit_file() {
+    match odin_manager.download_pit_file() {
         Ok(pit_buffer) => {
             if let Err(e) = output_file.write_all(&pit_buffer) {
                 print_error!("Failed to write PIT data to output file: {}", e);
@@ -74,7 +74,7 @@ pub(crate) fn action_download_pit(
         }
     }
 
-    if let Err(e) = bridge_manager.end_session() {
+    if let Err(e) = odin_manager.end_session() {
         print_error!("{}", e);
         success = false;
     }

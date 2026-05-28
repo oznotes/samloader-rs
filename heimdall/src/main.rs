@@ -14,12 +14,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bridge_manager;
 mod detect;
 mod download_pit;
 mod error;
 mod firmware;
 mod flash;
+mod odin_manager;
 mod packets;
 mod print_pit;
 mod tar_flash;
