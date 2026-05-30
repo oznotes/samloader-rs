@@ -1,13 +1,15 @@
 [package]
 name = "heimdall"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-samloader-pit = { path = "../pit" }
-samloader-odin = { path = "../odin" }
-clap = { version = "4", features = ["derive"] }
-tar = "0.4"
+samloader-pit = { workspace = true }
+samloader-odin = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+tar = { workspace = true }
 
 [[bin]]
 name = "heimdall"

@@ -1,12 +1,14 @@
 [package]
 name = "samloader-odin"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-samloader-pit = { path = "../pit" }
-rusb = "0.9"
-binrw = "0.15"
-tar = "0.4"
-md5 = "0.8"
-thiserror = "2"
+samloader-pit = { workspace = true }
+rusb = { workspace = true }
+binrw = { workspace = true }
+tar = { workspace = true }
+md5 = { workspace = true }
+thiserror = { workspace = true }
