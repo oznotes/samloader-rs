@@ -16,7 +16,7 @@
 use crate::error::OdinError;
 use crate::packets;
 use crate::packets::RequestPacket;
-use crate::{print_error, print_warning};
+use crate::print_warning;
 use libpit::{BinaryType, PitData};
 use rusb::{Context, DeviceHandle, LogLevel, UsbContext};
 use std::time::Duration;
@@ -99,24 +99,24 @@ impl OdinManager {
             if let Ok(languages) = handle.read_languages(Duration::from_secs(1)) {
                 if !languages.is_empty() {
                     if let Ok(manufacturer) = handle.read_manufacturer_string_ascii(&descriptor) {
-                        println!("      Manufacturer: \"{}\"", manufacturer);
+                        eprintln!("      Manufacturer: \"{}\"", manufacturer);
                     }
                     if let Ok(product) = handle.read_product_string_ascii(&descriptor) {
-                        println!("           Product: \"{}\"", product);
+                        eprintln!("           Product: \"{}\"", product);
                     }
                     if let Ok(serial) = handle.read_serial_number_string_ascii(&descriptor) {
-                        println!("         Serial No: \"{}\"", serial);
+                        eprintln!("         Serial No: \"{}\"", serial);
                     }
                 }
             }
 
-            println!("\n            length: {}", descriptor.length());
-            println!("      device class: {}", descriptor.class_code());
-            println!(
+            eprintln!("\n            length: {}", descriptor.length());
+            eprintln!("      device class: {}", descriptor.class_code());
+            eprintln!(
                 "               S/N: {}",
                 descriptor.serial_number_string_index().unwrap_or(0)
             );
-            println!(
+            eprintln!(
                 "           VID:PID: {:04X}:{:04X}",
                 descriptor.vendor_id(),
                 descriptor.product_id()
@@ -124,15 +124,15 @@ impl OdinManager {
 
             let version = descriptor.device_version();
             let bcd = (version.0 as u16) << 8 | (version.1 as u16) << 4 | (version.2 as u16);
-            println!("         bcdDevice: {:04X}", bcd);
+            eprintln!("         bcdDevice: {:04X}", bcd);
 
-            println!(
+            eprintln!(
                 "   iMan:iProd:iSer: {}:{}:{}",
                 descriptor.manufacturer_string_index().unwrap_or(0),
                 descriptor.product_string_index().unwrap_or(0),
                 descriptor.serial_number_string_index().unwrap_or(0)
             );
-            println!("          nb confs: {}", descriptor.num_configurations());
+            eprintln!("          nb confs: {}", descriptor.num_configurations());
         }
     }
 
@@ -234,13 +234,13 @@ impl OdinManager {
         for interface in config_descriptor.interfaces() {
             for setting in interface.descriptors() {
                 if self.verbose {
-                    println!(
+                    eprintln!(
                         "\ninterface[{}].altsetting[{}]: num endpoints = {}",
                         interface.number(),
                         setting.setting_number(),
                         setting.num_endpoints()
                     );
-                    println!(
+                    eprintln!(
                         "   Class.SubClass.Protocol: {:02X}.{:02X}.{:02X}",
                         setting.class_code(),
                         setting.sub_class_code(),
@@ -253,12 +253,12 @@ impl OdinManager {
 
                 for (i, endpoint) in setting.endpoint_descriptors().enumerate() {
                     if self.verbose {
-                        println!("       endpoint[{}].address: {:02X}", i, endpoint.address());
-                        println!(
+                        eprintln!("       endpoint[{}].address: {:02X}", i, endpoint.address());
+                        eprintln!(
                             "           max packet size: {:04X}",
                             endpoint.max_packet_size()
                         );
-                        println!("          polling interval: {:02X}", endpoint.interval());
+                        eprintln!("          polling interval: {:02X}", endpoint.interval());
                     }
 
                     if endpoint.direction() == rusb::Direction::In {
@@ -450,7 +450,7 @@ impl OdinManager {
         for attempt in 0..max_attempts {
             if attempt > 0 {
                 if self.verbose {
-                    println!(" Retrying...");
+                    eprintln!(" Retrying...");
                 }
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
@@ -487,7 +487,7 @@ impl OdinManager {
         for attempt in 0..max_attempts {
             if attempt > 0 {
                 if self.verbose {
-                    println!(" Retrying...");
+                    eprintln!(" Retrying...");
                 }
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
@@ -518,7 +518,7 @@ impl OdinManager {
         timeout: i32,
     ) -> Result<(), ()> {
         if self.verbose {
-            println!("Sending packet: {:#04X?}", packet);
+            eprintln!("Sending packet: {:#04X?}", packet);
         }
         let packet_bytes = packet.pack();
         if !self.send_bulk_transfer(&packet_bytes, timeout, true) {
@@ -541,7 +541,7 @@ impl OdinManager {
         buffer.truncate(received_size as usize);
         let parsed = T::unpack(&buffer).map_err(OdinError::ParseError)?;
         if self.verbose {
-            println!("Received packet: {:#04X?}", parsed);
+            eprintln!("Received packet: {:#04X?}", parsed);
         }
         Ok(parsed)
     }
@@ -641,10 +641,9 @@ impl OdinManager {
     pub(crate) fn download_pit_file(&self) -> Result<Vec<u8>, OdinError> {
         println!("Downloading device's PIT file...");
 
-        let pit_file = self.receive_pit_file().map_err(|e| {
-            print_error!("{}", e);
-            OdinError::PitDownloadFailed
-        })?;
+        let pit_file = self
+            .receive_pit_file()
+            .map_err(|_| OdinError::PitDownloadFailed)?;
 
         println!("PIT file download successful.\n");
         Ok(pit_file)
