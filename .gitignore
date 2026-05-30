@@ -2,3 +2,6 @@
 /*.zip
 /*.enc4
 /.idea
+.DS_Store
+._*
+*~

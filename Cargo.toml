@@ -2,6 +2,9 @@
 members = [
     "samloader",
     "fus",
+    "samloader-pit",
+    "samloader-odin",
+    "heimdall",
 ]
 resolver = "2"
 

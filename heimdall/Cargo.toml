@@ -1,0 +1,14 @@
+[package]
+name = "heimdall"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+samloader-pit = { path = "../samloader-pit" }
+samloader-odin = { path = "../samloader-odin" }
+clap = { version = "4", features = ["derive"] }
+tar = "0.4"
+
+[[bin]]
+name = "heimdall"
+path = "src/main.rs"
