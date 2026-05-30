@@ -525,16 +525,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "heimdall"
-version = "1.2.0"
-dependencies = [
- "clap",
- "samloader-odin",
- "samloader-pit",
- "tar",
-]
-
-[[package]]
 name = "http"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1201,6 +1191,9 @@ dependencies = [
  "indicatif",
  "memmap2",
  "samloader-fus",
+ "samloader-odin",
+ "samloader-pit",
+ "tar",
 ]
 
 [[package]]

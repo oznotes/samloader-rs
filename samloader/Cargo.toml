@@ -4,11 +4,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Download firmware for Samsung devices"
+description = "Download and flash firmware for Samsung devices"
 keywords = ["samsung", "firmware"]
 
 [dependencies]
 samloader-fus = { workspace = true }
-clap = { workspace = true }
+samloader-pit = { workspace = true }
+samloader-odin = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 indicatif = { workspace = true }
 memmap2 = { workspace = true }
+tar = { workspace = true }
