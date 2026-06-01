@@ -46,7 +46,6 @@ const SKIP_SIZE_CHECK_HELP: &str = "Do not verify that files fit in the specifie
 const PIT_HELP: &str = "The PIT file to use for repartitioning or flashing.";
 const PARTITIONS_AND_FILES_HELP_BRIEF: &str =
     "Pairs of partition names/identifiers and filenames to flash.";
-const PACKAGES_HELP: &str = "One or more .tar or .tar.md5 firmware package files.";
 
 const DETECT_ABOUT: &str = "Indicates whether or not a download mode device can be detected.";
 const DETECT_HELP: &str = r#"Indicates whether or not a download mode device can be detected.
@@ -76,6 +75,8 @@ const TAR_FLASH_ABOUT: &str = "Flashes Samsung firmware TAR/MD5 packages to your
 const TAR_FLASH_HELP: &str = r#"Flashes one or more Samsung firmware TAR/MD5 packages to your phone.
 The files within the packages are indexed and flashed in-memory, without
 unpacking them to disk."#;
+
+const NO_PACKAGES_ERROR: &str = "No packages specified for flashing. Please specify at least one of BL, AP, CP, CSC, or USERDATA.";
 
 const PARTITIONS_AND_FILES_HELP: &str = r#"Pairs of partition names (or identifiers) and filenames to flash.
 
@@ -265,12 +266,39 @@ fn main() {
                 )
                 .arg(Arg::new("pit").long("pit").num_args(1).help(PIT_HELP))
                 .arg(
-                    Arg::new("packages")
-                        .required(true)
-                        .action(ArgAction::Append)
-                        .num_args(1..)
-                        .value_name("PACKAGE")
-                        .help(PACKAGES_HELP),
+                    Arg::new("bl")
+                        .short('b')
+                        .long("BL")
+                        .num_args(1)
+                        .help("BL tar package file"),
+                )
+                .arg(
+                    Arg::new("ap")
+                        .short('a')
+                        .long("AP")
+                        .num_args(1)
+                        .help("AP tar package file"),
+                )
+                .arg(
+                    Arg::new("cp")
+                        .short('c')
+                        .long("CP")
+                        .num_args(1)
+                        .help("CP tar package file"),
+                )
+                .arg(
+                    Arg::new("csc")
+                        .short('s')
+                        .long("CSC")
+                        .num_args(1)
+                        .help("CSC tar package file"),
+                )
+                .arg(
+                    Arg::new("userdata")
+                        .short('u')
+                        .long("USERDATA")
+                        .num_args(1)
+                        .help("USERDATA tar package file"),
                 ),
         )
         .get_matches();
@@ -353,11 +381,28 @@ fn main() {
             )
         }
         Some(("tar-flash", sub_matches)) => {
-            let packages: Vec<String> = sub_matches
-                .get_many::<String>("packages")
-                .unwrap()
-                .cloned()
-                .collect();
+            let mut packages = Vec::new();
+            if let Some(bl) = sub_matches.get_one::<String>("bl") {
+                packages.push(bl.clone());
+            }
+            if let Some(ap) = sub_matches.get_one::<String>("ap") {
+                packages.push(ap.clone());
+            }
+            if let Some(cp) = sub_matches.get_one::<String>("cp") {
+                packages.push(cp.clone());
+            }
+            if let Some(csc) = sub_matches.get_one::<String>("csc") {
+                packages.push(csc.clone());
+            }
+            if let Some(userdata) = sub_matches.get_one::<String>("userdata") {
+                packages.push(userdata.clone());
+            }
+
+            if packages.is_empty() {
+                print_error!("{}", NO_PACKAGES_ERROR);
+                std::process::exit(1);
+            }
+
             tar_flash::action_tar_flash(
                 sub_matches.get_flag("repartition"),
                 verbose,
