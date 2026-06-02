@@ -50,11 +50,10 @@ const DETECT_HELP: &str = r#"Indicates whether or not a download mode device can
 Returns instantly per default, or waits until device is found
 when --wait argument is used."#;
 
-const DUMP_PIT_ABOUT: &str =
-    "Downloads the connected device's PIT file to the specified output file.";
-const DUMP_PIT_HELP: &str = r#"Downloads the connected device's PIT file to the specified
+const DUMP_PIT_ABOUT: &str = "Dumps the connected device's PIT file to the specified output file.";
+const DUMP_PIT_HELP: &str = r#"Dumps the connected device's PIT file to the specified
 output file."#;
-const DUMP_PIT_OUTPUT_HELP: &str = "Output file path for the downloaded PIT file.";
+const DUMP_PIT_OUTPUT_HELP: &str = "Output file path for the dumped PIT file.";
 
 const PRINT_PIT_ABOUT: &str = "Prints the contents of a PIT file in a human readable format.";
 const PRINT_PIT_HELP: &str = r#"Prints the contents of a PIT file in a human readable format. If
