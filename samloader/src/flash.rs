@@ -19,7 +19,7 @@ use crate::print_error;
 use samloader_odin::{
     FirmwareInfo, FirmwareSource, Lz4FrameHeader, OdinManager, TarEntryReader, verify_md5_footer,
 };
-use samloader_pit::PitData;
+use samloader_pit::{PitData, PitEntry};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -317,7 +317,7 @@ fn execute_flash_pipeline(
 fn find_pit_entry_by_filename<'a>(
     pit_data: &'a PitData,
     filename: &str,
-) -> Option<&'a samloader_pit::PitEntry> {
+) -> Option<&'a PitEntry> {
     pit_data.entries.iter().find(|e| {
         let flash_fn = e.flash_filename.to_string_lossy();
         flash_fn.eq_ignore_ascii_case(filename)
@@ -328,11 +328,11 @@ fn create_firmware_info<'a>(
     mut source: FirmwareSource,
     source_size: u64,
     is_lz4_suffix: bool,
-    pit_entry: &'a samloader_pit::PitEntry,
+    pit_entry: &'a PitEntry,
     lz4_supported: bool,
     skip_size_check: bool,
     file_display_name: &str,
-) -> Result<FirmwareInfo<'a>, i32> {
+) -> Option<FirmwareInfo<'a>> {
     let lz4_hdr = if is_lz4_suffix {
         match Lz4FrameHeader::from_read(&mut source) {
             Ok(header) => Some(header),
@@ -342,7 +342,7 @@ fn create_firmware_info<'a>(
                     file_display_name,
                     e
                 );
-                return Err(1);
+                return None;
             }
         }
     } else {
@@ -366,7 +366,7 @@ fn create_firmware_info<'a>(
             "Device does not support LZ4 compression, but file \"{}\" is LZ4 compressed.",
             file_display_name
         );
-        return Err(1);
+        return None;
     }
 
     if !skip_size_check {
@@ -382,18 +382,18 @@ fn create_firmware_info<'a>(
                 "{} partition is too small for given file. Use --skip-size-check to flash anyways.",
                 pit_entry.partition_name
             );
-            return Err(1);
+            return None;
         }
     }
 
     if let Some(header) = lz4_hdr {
-        Ok(FirmwareInfo::Lz4(samloader_odin::FirmwareLz4File {
+        Some(FirmwareInfo::Lz4(samloader_odin::FirmwareLz4File {
             pit_entry,
             file: source,
             header,
         }))
     } else {
-        Ok(FirmwareInfo::Normal(samloader_odin::FirmwareFile {
+        Some(FirmwareInfo::Normal(samloader_odin::FirmwareFile {
             pit_entry,
             file: source,
             file_size: source_size,
@@ -484,7 +484,7 @@ pub(crate) fn action_flash(
             }
         };
 
-        let info = match create_firmware_info(
+        let Some(info) = create_firmware_info(
             FirmwareSource::Tar(reader),
             entry.size,
             entry.is_lz4,
@@ -492,9 +492,8 @@ pub(crate) fn action_flash(
             odin_manager.is_lz4_supported(),
             skip_size_check,
             &entry.original_name,
-        ) {
-            Ok(info) => info,
-            Err(code) => return code,
+        ) else {
+            return 1;
         };
         partition_infos.push(info);
     }
@@ -543,7 +542,7 @@ pub(crate) fn action_flash(
             return 1;
         };
 
-        let info = match create_firmware_info(
+        let Some(info) = create_firmware_info(
             FirmwareSource::File(file),
             file_size,
             is_lz4_suffix,
@@ -551,9 +550,8 @@ pub(crate) fn action_flash(
             odin_manager.is_lz4_supported(),
             skip_size_check,
             &part.filename,
-        ) {
-            Ok(info) => info,
-            Err(code) => return code,
+        ) else {
+            return 1;
         };
         partition_infos.push(info);
     }
