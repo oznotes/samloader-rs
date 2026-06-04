@@ -19,9 +19,8 @@ use samloader_pit::PitData;
 use std::fs::File;
 use std::io::{Read, Write};
 
-pub(crate) fn action_detect(verbose: bool, wait: bool, usb_log_level: &str) -> i32 {
+pub(crate) fn action_detect(verbose: bool, wait: bool) -> i32 {
     let mut odin_manager = OdinManager::new(verbose, wait);
-    odin_manager.set_usb_log_level(usb_log_level);
 
     if let Err(e) = odin_manager.detect_device() {
         eprintln!("ERROR: {}", e);
@@ -31,7 +30,7 @@ pub(crate) fn action_detect(verbose: bool, wait: bool, usb_log_level: &str) -> i
     }
 }
 
-pub(crate) fn action_dump_pit(output: &str, verbose: bool, wait: bool, usb_log_level: &str) -> i32 {
+pub(crate) fn action_dump_pit(output: &str, verbose: bool, wait: bool) -> i32 {
     if output.is_empty() {
         println!("Output file was not specified.\n");
         return 0;
@@ -48,7 +47,6 @@ pub(crate) fn action_dump_pit(output: &str, verbose: bool, wait: bool, usb_log_l
 
     // Download PIT file from device.
     let mut odin_manager = OdinManager::new(verbose, wait);
-    odin_manager.set_usb_log_level(usb_log_level);
 
     if let Err(e) = odin_manager.initialise() {
         print_error!("{}", e);
@@ -83,7 +81,7 @@ pub(crate) fn action_dump_pit(output: &str, verbose: bool, wait: bool, usb_log_l
     if success { 0 } else { 1 }
 }
 
-pub(crate) fn action_print_pit(file: &str, verbose: bool, wait: bool, usb_log_level: &str) -> i32 {
+pub(crate) fn action_print_pit(file: &str, verbose: bool, wait: bool) -> i32 {
     if !file.is_empty() {
         let mut f = match File::open(file) {
             Ok(f) => f,
@@ -111,7 +109,6 @@ pub(crate) fn action_print_pit(file: &str, verbose: bool, wait: bool, usb_log_le
         }
     } else {
         let mut odin_manager = OdinManager::new(verbose, wait);
-        odin_manager.set_usb_log_level(usb_log_level);
 
         if let Err(e) = odin_manager.initialise() {
             print_error!("{}", e);

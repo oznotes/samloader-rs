@@ -35,7 +35,6 @@ macro_rules! print_error {
 }
 
 const VERBOSE_HELP: &str = "Enable verbose output";
-const USB_LOG_LEVEL_HELP: &str = "Set libusb log level (none, error, warning, info, debug)";
 const WAIT_HELP: &str = "Waits until a compatible device is connected.";
 const REPARTITION_HELP: &str = "Repartition the device. WARNING: It's strongly recommended you specify all files at your disposal.";
 const SKIP_SIZE_CHECK_HELP: &str = "Do not verify that files fit in the specified partition.";
@@ -77,13 +76,6 @@ fn main() {
                 .action(ArgAction::SetTrue)
                 .global(true)
                 .help(VERBOSE_HELP),
-        )
-        .arg(
-            Arg::new("usb-log-level")
-                .long("usb-log-level")
-                .num_args(1)
-                .global(true)
-                .help(USB_LOG_LEVEL_HELP),
         )
         .subcommand(
             Command::new("download")
@@ -290,10 +282,6 @@ fn main() {
         .get_matches();
 
     let verbose = matches.get_flag("verbose");
-    let usb_log_level = matches
-        .get_one::<String>("usb-log-level")
-        .map(|s| s.as_str())
-        .unwrap_or("");
 
     let result = match matches.subcommand() {
         Some(("download", sub_m)) => {
@@ -330,13 +318,12 @@ fn main() {
             0
         }
         Some(("detect", sub_matches)) => {
-            actions::action_detect(verbose, sub_matches.get_flag("wait"), usb_log_level)
+            actions::action_detect(verbose, sub_matches.get_flag("wait"))
         }
         Some(("dump-pit", sub_matches)) => actions::action_dump_pit(
             sub_matches.get_one::<String>("output").unwrap(),
             verbose,
             sub_matches.get_flag("wait"),
-            usb_log_level,
         ),
         Some(("print-pit", sub_matches)) => actions::action_print_pit(
             sub_matches
@@ -345,7 +332,6 @@ fn main() {
                 .unwrap_or(""),
             verbose,
             sub_matches.get_flag("wait"),
-            usb_log_level,
         ),
         Some(("flash", sub_matches)) => {
             let mut packages = Vec::new();
@@ -397,7 +383,6 @@ fn main() {
                 sub_matches.get_flag("repartition"),
                 verbose,
                 sub_matches.get_flag("wait"),
-                usb_log_level,
                 sub_matches.get_flag("skip-size-check"),
                 sub_matches.get_flag("skip-md5"),
                 sub_matches.get_one::<String>("pit").map(|s| s.as_str()),

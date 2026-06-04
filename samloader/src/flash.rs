@@ -212,11 +212,9 @@ fn scan_tar_packages(
 fn init_session_and_get_pit(
     verbose: bool,
     wait: bool,
-    usb_log_level: &str,
     pit_file_bytes: Option<&[u8]>,
 ) -> Result<(OdinManager, PitData), i32> {
     let mut odin_manager = OdinManager::new(verbose, wait);
-    odin_manager.set_usb_log_level(usb_log_level);
 
     if let Err(e) = odin_manager.initialise() {
         print_error!("{}", e);
@@ -260,7 +258,7 @@ fn init_session_and_get_pit(
 }
 
 fn execute_flash_pipeline(
-    odin_manager: OdinManager,
+    mut odin_manager: OdinManager,
     pit_data: &PitData,
     mut partition_infos: Vec<FirmwareInfo>,
     repartition: bool,
@@ -398,7 +396,6 @@ pub(crate) fn action_flash(
     repartition: bool,
     verbose: bool,
     wait: bool,
-    usb_log_level: &str,
     skip_size_check: bool,
     skip_md5: bool,
     pit: Option<&str>,
@@ -443,7 +440,7 @@ pub(crate) fn action_flash(
 
     // 3. Initialize connection session and parse the PIT data
     let (odin_manager, pit_data) =
-        match init_session_and_get_pit(verbose, wait, usb_log_level, pit_file_bytes.as_deref()) {
+        match init_session_and_get_pit(verbose, wait, pit_file_bytes.as_deref()) {
             Ok(res) => res,
             Err(code) => return code,
         };

@@ -318,7 +318,7 @@ pub(crate) enum HandshakeResponse {
 }
 
 impl InboundPacket for HandshakeResponse {
-    const SIZE: usize = 1024;
+    const SIZE: usize = 4;
 
     fn unpack(buffer: &[u8]) -> Result<Self, String> {
         let mut reader = Cursor::new(buffer);

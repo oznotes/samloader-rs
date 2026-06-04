@@ -16,10 +16,9 @@ Commands:
   help             Print this message or the help of the given subcommand(s)
 
 Options:
-      --verbose                        Enable verbose output
-      --usb-log-level <usb-log-level>  Set libusb log level (none, error, warning, info, debug)
-  -h, --help                           Print help
-  -V, --version                        Print version
+      --verbose  Enable verbose output
+  -h, --help     Print help
+  -V, --version  Print version
 ```
 
 ## Features
@@ -52,6 +51,3 @@ This project is licensed under the **Apache License, Version 2.0**.
 
 - **Bifrost (FUS Authentication):**
   The authentication mechanism used to communicate with Samsung's Firmware Update Server (FUS) was ported from [zacharee/Bifrost](https://github.com/zacharee/Bifrost). The original implementation is licensed under the **MIT License**, and relevant copyright headers have been preserved.
-
-- **libusb (USB Transport):**
-  All low-level USB communication is powered by the popular open-source USB library [libusb](https://libusb.info), which is licensed under the **LGPL-2.1**.
