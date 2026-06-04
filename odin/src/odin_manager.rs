@@ -207,7 +207,12 @@ impl OdinManager {
         false
     }
 
-    fn receive_bulk_transfer(&mut self, data: &mut [u8], timeout: i32, retry: bool) -> i32 {
+    fn receive_bulk_transfer(
+        &mut self,
+        data: &mut [u8],
+        timeout: i32,
+        retry: bool,
+    ) -> Result<(), ()> {
         let max_attempts = if retry { 6 } else { 1 };
 
         for attempt in 0..max_attempts {
@@ -226,7 +231,7 @@ impl OdinManager {
             }
 
             match self.port.read_exact(data) {
-                Ok(_) => return data.len() as i32,
+                Ok(_) => return Ok(()),
                 Err(e) => {
                     if retry {
                         print_warning!("Serial port error {} whilst receiving data.", e);
@@ -234,20 +239,20 @@ impl OdinManager {
                 }
             }
         }
-        -1
+        Err(())
     }
 
     fn send_packet(
         &mut self,
         packet: &(impl packets::OutboundPacket + std::fmt::Debug),
         timeout: i32,
-    ) -> Result<(), ()> {
+    ) -> Result<(), OdinError> {
         if self.verbose {
             eprintln!("Sending packet: {:#04X?}", packet);
         }
         let packet_bytes = packet.pack();
         if !self.send_bulk_transfer(&packet_bytes, timeout, true) {
-            return Err(());
+            return Err(OdinError::SendPacketFailed);
         }
         Ok(())
     }
@@ -258,13 +263,9 @@ impl OdinManager {
         timeout: i32,
     ) -> Result<T, OdinError> {
         let mut buffer = vec![0u8; size];
-        let received_size = self.receive_bulk_transfer(&mut buffer, timeout, true);
+        self.receive_bulk_transfer(&mut buffer, timeout, true)
+            .map_err(|_| OdinError::ReceivePacketFailed)?;
 
-        if received_size < 0 {
-            return Err(OdinError::ReceivePacketFailed);
-        }
-
-        buffer.truncate(received_size as usize);
         let parsed = T::unpack(&buffer).map_err(OdinError::ParseError)?;
         if self.verbose {
             eprintln!("Received packet: {:#04X?}", parsed);
@@ -284,8 +285,7 @@ impl OdinManager {
         packet: &RequestPacket,
         timeout: i32,
     ) -> Result<u32, OdinError> {
-        self.send_packet(packet, timeout)
-            .map_err(|_| OdinError::SendPacketFailed)?;
+        self.send_packet(packet, timeout)?;
 
         let response = self.receive_packet::<packets::Response>(timeout)?;
         let expected_type = packet.expected_response_type();
@@ -319,8 +319,7 @@ impl OdinManager {
 
         // Flash pit file
         let packet = packets::FilePartPacket::new(&pit_buffer, pit_buffer_size);
-        self.send_packet(&packet, 3000)
-            .map_err(|_| OdinError::SendPacketFailed)?;
+        self.send_packet(&packet, 3000)?;
 
         let response = self.receive_packet::<packets::Response>(3000)?;
 
