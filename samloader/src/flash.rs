@@ -214,7 +214,13 @@ fn init_session_and_get_pit(
     wait: bool,
     pit_file_bytes: Option<&[u8]>,
 ) -> Result<(OdinManager, PitData), i32> {
-    let mut odin_manager = OdinManager::new(verbose, wait);
+    let mut odin_manager = match OdinManager::new(verbose, wait) {
+        Ok(m) => m,
+        Err(e) => {
+            print_error!("{}", e);
+            return Err(1);
+        }
+    };
 
     if let Err(e) = odin_manager.initialise() {
         print_error!("{}", e);

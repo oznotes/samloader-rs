@@ -17,6 +17,7 @@ use crate::error::OdinError;
 use crate::packets;
 use crate::packets::{InboundPacket, PitDataPacket, RequestPacket};
 use samloader_pit::{BinaryType, PitData};
+use serialport::{ClearBuffer, SerialPort, SerialPortType, UsbPortInfo};
 use std::io::{Read, Write};
 use std::time::Duration;
 
@@ -29,8 +30,7 @@ macro_rules! print_warning {
 
 pub struct OdinManager {
     verbose: bool,
-    wait_for_device: bool,
-    port: Option<Box<dyn serialport::SerialPort>>,
+    port: Box<dyn SerialPort>,
 
     file_transfer_sequence_max_length: usize,
     file_transfer_packet_size: usize,
@@ -54,20 +54,31 @@ const FILE_TRANSFER_PACKET_SIZE_DEFAULT: usize = 0x20000;
 const FILE_TRANSFER_SEQUENCE_TIMEOUT_DEFAULT: u32 = 30000;
 
 impl OdinManager {
-    pub fn new(verbose: bool, wait_for_device: bool) -> Self {
-        Self {
+    pub fn new(verbose: bool, wait_for_device: bool) -> Result<Self, OdinError> {
+        let (port_name, info) = find_download_mode_device(wait_for_device)?;
+
+        if verbose {
+            Self::print_device_info(&info);
+        }
+
+        // Open serial port at 115200 baud
+        let port = serialport::new(&port_name, 115_200)
+            .timeout(Duration::from_millis(1000))
+            .open()
+            .map_err(OdinError::DeviceAccess)?;
+
+        Ok(Self {
             verbose,
-            wait_for_device,
-            port: None,
+            port,
 
             file_transfer_sequence_max_length: FILE_TRANSFER_SEQUENCE_MAX_LENGTH_DEFAULT,
             file_transfer_packet_size: FILE_TRANSFER_PACKET_SIZE_DEFAULT,
             file_transfer_sequence_timeout: FILE_TRANSFER_SEQUENCE_TIMEOUT_DEFAULT,
             lz4_supported: false,
-        }
+        })
     }
 
-    fn print_device_info(&self, info: &serialport::UsbPortInfo) {
+    fn print_device_info(info: &UsbPortInfo) {
         if let Some(manufacturer) = &info.manufacturer {
             eprintln!("      Manufacturer: \"{}\"", manufacturer);
         }
@@ -80,95 +91,11 @@ impl OdinManager {
         eprintln!("\n           VID:PID: {:04X}:{:04X}", info.vid, info.pid);
     }
 
-    pub fn detect_device(&mut self) -> Result<(), OdinError> {
-        if self.wait_for_device {
-            println!("Waiting for device...");
-        }
-
-        loop {
-            if let Ok(ports) = serialport::available_ports() {
-                for port in ports {
-                    if let serialport::SerialPortType::UsbPort(info) = port.port_type
-                        && info.vid == VID_SAMSUNG
-                        && SUPPORTED_DEVICES.iter().any(|&(_, pid)| pid == info.pid)
-                    {
-                        println!("Device detected");
-                        return Ok(());
-                    }
-                }
-            }
-
-            if self.wait_for_device {
-                std::thread::sleep(Duration::from_secs(1));
-            } else {
-                break;
-            }
-        }
-
-        Err(OdinError::DeviceNotFound)
-    }
-
-    fn find_device_port(&mut self) -> Result<(), OdinError> {
-        if self.wait_for_device {
-            println!("Waiting for device...");
-        } else {
-            println!("Detecting device...");
-        }
-
-        let mut samsung_port = None;
-
-        loop {
-            if let Ok(ports) = serialport::available_ports() {
-                for port in ports {
-                    if let serialport::SerialPortType::UsbPort(info) = port.port_type
-                        && info.vid == VID_SAMSUNG
-                        && SUPPORTED_DEVICES.iter().any(|&(_, pid)| pid == info.pid)
-                    {
-                        samsung_port = Some((port.port_name, info));
-                        break;
-                    }
-                }
-            }
-
-            if samsung_port.is_some() {
-                break;
-            }
-
-            if self.wait_for_device {
-                std::thread::sleep(Duration::from_secs(1));
-            } else {
-                break;
-            }
-        }
-
-        let (port_name, info) = match samsung_port {
-            Some(p) => p,
-            None => return Err(OdinError::DeviceNotFound),
-        };
-
-        if self.verbose {
-            self.print_device_info(&info);
-        }
-
-        // Open serial port at 115200 baud
-        let port = serialport::new(&port_name, 115_200)
-            .timeout(Duration::from_millis(1000))
-            .open()
-            .map_err(OdinError::DeviceAccess)?;
-
-        self.port = Some(port);
-        Ok(())
-    }
-
-    fn initialise_protocol(&mut self) -> Result<(), OdinError> {
+    pub fn initialise(&mut self) -> Result<(), OdinError> {
         println!("Initialising protocol...");
 
-        {
-            let port = self.port.as_mut().unwrap();
-            println!("Resetting device...");
-            if let Err(e) = port.clear(serialport::ClearBuffer::All) {
-                print_warning!("Failed to clear serial buffers! Result: {}", e);
-            }
+        if let Err(e) = self.port.clear(ClearBuffer::All) {
+            print_warning!("Failed to clear serial buffers! Result: {}", e);
         }
 
         self.send_packet(&packets::HandshakePacket::new(), 1000)
@@ -193,15 +120,6 @@ impl OdinManager {
                 Err(OdinError::UnexpectedHandshake)
             }
         }
-    }
-
-    pub fn initialise(&mut self) -> Result<(), OdinError> {
-        println!("Initialising connection...");
-
-        self.find_device_port()?;
-        self.initialise_protocol()?;
-
-        Ok(())
     }
 
     pub fn begin_session(&mut self) -> Result<(), OdinError> {
@@ -253,11 +171,6 @@ impl OdinManager {
     }
 
     fn send_bulk_transfer(&mut self, data: &[u8], timeout: i32, retry: bool) -> bool {
-        let port = match self.port.as_mut() {
-            Some(p) => p,
-            None => return false,
-        };
-
         let max_attempts = if retry { 6 } else { 1 };
         for attempt in 0..max_attempts {
             if attempt > 0 {
@@ -267,21 +180,21 @@ impl OdinManager {
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
 
-            if let Err(e) = port.set_timeout(Duration::from_millis(timeout as u64)) {
+            if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
                 if retry {
                     print_warning!("Failed to set serial port timeout: {}", e);
                 }
                 continue;
             }
 
-            if let Err(e) = port.write_all(data) {
+            if let Err(e) = self.port.write_all(data) {
                 if retry {
                     print_warning!("Serial port error {} whilst sending data.", e);
                 }
                 continue;
             }
 
-            if let Err(e) = port.flush() {
+            if let Err(e) = self.port.flush() {
                 if retry {
                     print_warning!("Serial port error {} whilst flushing data.", e);
                 }
@@ -295,11 +208,6 @@ impl OdinManager {
     }
 
     fn receive_bulk_transfer(&mut self, data: &mut [u8], timeout: i32, retry: bool) -> i32 {
-        let port = match self.port.as_mut() {
-            Some(p) => p,
-            None => return -1,
-        };
-
         let max_attempts = if retry { 6 } else { 1 };
 
         for attempt in 0..max_attempts {
@@ -310,14 +218,14 @@ impl OdinManager {
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
 
-            if let Err(e) = port.set_timeout(Duration::from_millis(timeout as u64)) {
+            if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
                 if retry {
                     print_warning!("Failed to set serial port timeout: {}", e);
                 }
                 continue;
             }
 
-            match port.read_exact(data) {
+            match self.port.read_exact(data) {
                 Ok(_) => return data.len() as i32,
                 Err(e) => {
                     if retry {
@@ -643,7 +551,7 @@ pub fn reboot_download() -> Result<(), OdinError> {
     let mut samsung_port = None;
     for port in ports {
         match port.port_type {
-            serialport::SerialPortType::UsbPort(info) if info.vid == VID_SAMSUNG => {
+            SerialPortType::UsbPort(info) if info.vid == VID_SAMSUNG => {
                 samsung_port = Some(port.port_name);
                 break;
             }
@@ -671,4 +579,28 @@ pub fn reboot_download() -> Result<(), OdinError> {
         .map_err(|e| OdinError::SerialError(format!("Failed to flush serial buffer: {}", e)))?;
 
     Ok(())
+}
+
+pub fn find_download_mode_device(wait: bool) -> Result<(String, UsbPortInfo), OdinError> {
+    loop {
+        if let Ok(ports) = serialport::available_ports() {
+            for port in ports {
+                if let SerialPortType::UsbPort(info) = port.port_type
+                    && info.vid == VID_SAMSUNG
+                    && SUPPORTED_DEVICES.iter().any(|&(_, pid)| pid == info.pid)
+                {
+                    return Ok((port.port_name, info));
+                }
+            }
+        }
+
+        if wait {
+            println!("Waiting for device...");
+            std::thread::sleep(Duration::from_secs(1));
+        } else {
+            break;
+        }
+    }
+
+    Err(OdinError::DeviceNotFound)
 }
