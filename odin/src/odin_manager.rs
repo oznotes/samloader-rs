@@ -16,7 +16,7 @@
 use crate::error::OdinError;
 use crate::packets;
 use crate::packets::{InboundPacket, PitDataPacket, RequestPacket};
-use samloader_pit::{BinaryType, PitData};
+use samloader_pit::BinaryType;
 use serialport::{ClearBuffer, SerialPort, SerialPortType, UsbPortInfo};
 use std::io::{Read, Write};
 use std::time::Duration;
@@ -351,12 +351,7 @@ impl OdinManager {
         Ok(response.value)
     }
 
-    pub fn send_pit_data(&mut self, pit_data: &PitData) -> Result<(), OdinError> {
-        // Create packed in-memory PIT file
-        let pit_buffer = pit_data
-            .pack()
-            .map_err(|e| OdinError::ParseError(format!("Failed to pack PIT: {}", e)))?;
-
+    pub fn send_pit_data(&mut self, pit_buffer: &[u8]) -> Result<(), OdinError> {
         let pit_buffer_size = pit_buffer.len() as u32;
 
         // Start file transfer
@@ -370,7 +365,7 @@ impl OdinManager {
             .map_err(|_| OdinError::PitFilePartInfoSendFailed)?;
 
         // Flash pit file
-        let packet = packets::FilePartPacket::new(&pit_buffer, pit_buffer_size);
+        let packet = packets::FilePartPacket::new(pit_buffer, pit_buffer_size);
         self.send_packet(&packet, 3000)?;
 
         let response = self.receive_packet::<packets::Response>(3000)?;

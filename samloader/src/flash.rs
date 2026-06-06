@@ -211,12 +211,9 @@ fn scan_tar_packages(
 
 fn execute_flash_pipeline(
     mut odin_manager: OdinManager,
-    pit_data: &PitData,
     mut partition_infos: Vec<FirmwareInfo>,
-    repartition: bool,
-    pit_file_bytes: Option<&[u8]>,
 ) -> i32 {
-    let mut total_bytes: u64 = partition_infos
+    let total_bytes: u64 = partition_infos
         .iter()
         .map(|part| match part {
             FirmwareInfo::Normal(f) => f.file_size,
@@ -224,22 +221,9 @@ fn execute_flash_pipeline(
         })
         .sum();
 
-    if repartition && let Some(bytes) = pit_file_bytes {
-        total_bytes += bytes.len() as u64;
-    }
-
     if let Err(e) = odin_manager.set_total_bytes(total_bytes) {
         print_error!("{}", e);
         return 1;
-    }
-
-    if repartition {
-        println!("Uploading PIT");
-        if let Err(e) = odin_manager.send_pit_data(pit_data) {
-            print_error!("{}", e);
-            return 1;
-        }
-        println!("PIT upload successful\n");
     }
 
     for info in &mut partition_infos {
@@ -354,11 +338,6 @@ pub(crate) fn action_flash(
     packages: &[String],
     partitions: &[PartitionArg],
 ) -> i32 {
-    if repartition && pit.is_none() && packages.is_empty() {
-        println!("If you wish to repartition then a PIT file must be specified.\n");
-        return 0;
-    }
-
     // 1. Resolve explicit PIT file first if provided
     let mut pit_file_bytes = None;
     if let Some(pit_path) = pit {
@@ -390,6 +369,11 @@ pub(crate) fn action_flash(
         }
     }
 
+    if repartition && pit_file_bytes.is_none() {
+        print_error!("If you wish to repartition then a PIT file must be specified.");
+        return 1;
+    }
+
     // 3. Initialize connection session and parse the PIT data
     let mut odin_manager = match OdinManager::new(verbose, wait) {
         Ok(m) => m,
@@ -409,27 +393,28 @@ pub(crate) fn action_flash(
         return 1;
     }
 
-    let pit_data = if let Some(bytes) = pit_file_bytes.as_deref() {
-        match PitData::new(bytes) {
-            Ok(data) => data,
-            Err(_) => {
-                print_error!("Failed to unpack PIT file!");
-                return 1;
-            }
+    if repartition {
+        println!("Uploading PIT");
+        if let Err(e) = odin_manager.send_pit_data(pit_file_bytes.as_ref().unwrap()) {
+            print_error!("{}", e);
+            return 1;
         }
-    } else {
-        match odin_manager.download_pit_file() {
-            Ok(pit_buffer) => match PitData::new(&pit_buffer) {
-                Ok(device_pit_data) => device_pit_data,
-                Err(_) => {
-                    print_error!("Failed to unpack device's PIT file!");
-                    return 1;
-                }
-            },
-            Err(e) => {
-                print_error!("{}", e);
-                return 1;
-            }
+        println!("PIT upload successful\n");
+    }
+
+    let pit_buffer = match odin_manager.download_pit_file() {
+        Ok(buf) => buf,
+        Err(e) => {
+            print_error!("{}", e);
+            return 1;
+        }
+    };
+
+    let pit_data = match PitData::new(&pit_buffer) {
+        Ok(data) => data,
+        Err(_) => {
+            print_error!("Failed to unpack device's PIT file!");
+            return 1;
         }
     };
 
@@ -549,11 +534,5 @@ pub(crate) fn action_flash(
     let partition_infos = unique_partition_infos;
 
     // 7. Execute flash pipeline
-    execute_flash_pipeline(
-        odin_manager,
-        &pit_data,
-        partition_infos,
-        repartition,
-        pit_file_bytes.as_deref(),
-    )
+    execute_flash_pipeline(odin_manager, partition_infos)
 }
