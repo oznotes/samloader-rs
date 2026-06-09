@@ -14,13 +14,20 @@
 // limitations under the License.
 
 use crate::print_error;
-use samloader_odin::{OdinManager, find_download_mode_device};
+use samloader_odin::{OdinManager, find_download_mode_device, rusb};
 use samloader_pit::PitData;
 use std::fs::File;
 use std::io::{Read, Write};
 
 pub(crate) fn action_detect(_verbose: bool, wait: bool) -> i32 {
-    if find_download_mode_device(wait).is_ok() {
+    let context = match rusb::Context::new() {
+        Ok(c) => c,
+        Err(_) => {
+            eprintln!("ERROR: Failed to create libusb context.");
+            return 1;
+        }
+    };
+    if find_download_mode_device(&context, wait).is_ok() {
         println!("Device detected");
         0
     } else {

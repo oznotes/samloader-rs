@@ -20,8 +20,8 @@ pub enum OdinError {
     #[error("Failed to detect compatible download-mode device.")]
     DeviceNotFound,
 
-    #[error("Failed to access device. Serial port error: {0}")]
-    DeviceAccess(#[from] serialport::Error),
+    #[error("Failed to access device. libusb error: {0}")]
+    DeviceAccess(#[from] rusb::Error),
 
     #[error("Failed to retrieve config descriptor")]
     ConfigDescriptorRetrieval,

@@ -16,9 +16,8 @@
 use crate::error::OdinError;
 use crate::packets;
 use crate::packets::{InboundPacket, PitDataPacket, RequestPacket};
+use rusb::{Context, DeviceHandle, UsbContext};
 use samloader_pit::BinaryType;
-use serialport::{ClearBuffer, SerialPort, SerialPortType, UsbPortInfo};
-use std::io::{Read, Write};
 use std::time::Duration;
 
 macro_rules! print_warning {
@@ -30,7 +29,14 @@ macro_rules! print_warning {
 
 pub struct OdinManager {
     verbose: bool,
-    port: Box<dyn SerialPort>,
+    handle: DeviceHandle<Context>,
+
+    interface_index: i32,
+    alt_setting_index: i32,
+    in_endpoint: u8,
+    out_endpoint: u8,
+
+    interface_claimed: bool,
 
     file_transfer_sequence_max_length: usize,
     file_transfer_packet_size: usize,
@@ -53,23 +59,82 @@ const FILE_TRANSFER_SEQUENCE_MAX_LENGTH_DEFAULT: usize = 800;
 const FILE_TRANSFER_PACKET_SIZE_DEFAULT: usize = 0x20000;
 const FILE_TRANSFER_SEQUENCE_TIMEOUT_DEFAULT: u32 = 30000;
 
+const USB_CLASS_CDC_DATA: u8 = 0x0A;
+
 impl OdinManager {
     pub fn new(verbose: bool, wait_for_device: bool) -> Result<Self, OdinError> {
-        let (port_name, info) = find_download_mode_device(wait_for_device)?;
+        let context = Context::new().map_err(|e| {
+            OdinError::SerialError(format!("Failed to create libusb context: {}", e))
+        })?;
+        let device = find_download_mode_device(&context, wait_for_device)?;
 
-        if verbose {
-            Self::print_device_info(&info);
+        let handle = match device.open() {
+            Ok(h) => h,
+            Err(e) => return Err(OdinError::DeviceAccess(e)),
+        };
+
+        if let Ok(config) = handle.active_configuration() {
+            if config != 1 {
+                let _ = handle.set_active_configuration(1);
+            }
+        } else {
+            let _ = handle.set_active_configuration(1);
         }
 
-        // Open serial port at 115200 baud
-        let port = serialport::new(&port_name, 115_200)
-            .timeout(Duration::from_millis(1000))
-            .open()
-            .map_err(OdinError::DeviceAccess)?;
+        if verbose {
+            Self::print_device_info(&device, &handle);
+        }
+
+        let config_descriptor = device
+            .config_descriptor(0)
+            .map_err(|_| OdinError::ConfigDescriptorRetrieval)?;
+
+        let mut interface_index = -1;
+        let mut alt_setting_index = -1;
+        let mut in_endpoint = 0;
+        let mut out_endpoint = 0;
+
+        for interface in config_descriptor.interfaces() {
+            for setting in interface.descriptors() {
+                let mut in_endpoint_address = None;
+                let mut out_endpoint_address = None;
+
+                for endpoint in setting.endpoint_descriptors() {
+                    if endpoint.direction() == rusb::Direction::In {
+                        in_endpoint_address = Some(endpoint.address());
+                    } else {
+                        out_endpoint_address = Some(endpoint.address());
+                    }
+                }
+
+                if interface_index < 0
+                    && setting.num_endpoints() == 2
+                    && setting.class_code() == USB_CLASS_CDC_DATA
+                    && let (Some(in_addr), Some(out_addr)) =
+                        (in_endpoint_address, out_endpoint_address)
+                {
+                    interface_index = interface.number() as i32;
+                    alt_setting_index = setting.setting_number() as i32;
+                    in_endpoint = in_addr;
+                    out_endpoint = out_addr;
+                }
+            }
+        }
+
+        if interface_index < 0 {
+            return Err(OdinError::InterfaceConfigurationNotFound);
+        }
 
         Ok(Self {
             verbose,
-            port,
+            handle,
+
+            interface_index,
+            alt_setting_index,
+            in_endpoint,
+            out_endpoint,
+
+            interface_claimed: false,
 
             file_transfer_sequence_max_length: FILE_TRANSFER_SEQUENCE_MAX_LENGTH_DEFAULT,
             file_transfer_packet_size: FILE_TRANSFER_PACKET_SIZE_DEFAULT,
@@ -78,24 +143,110 @@ impl OdinManager {
         })
     }
 
-    fn print_device_info(info: &UsbPortInfo) {
-        if let Some(manufacturer) = &info.manufacturer {
-            eprintln!("      Manufacturer: \"{}\"", manufacturer);
+    fn print_device_info(device: &rusb::Device<Context>, handle: &DeviceHandle<Context>) {
+        if let Ok(descriptor) = device.device_descriptor() {
+            if let Ok(languages) = handle.read_languages(Duration::from_secs(1))
+                && !languages.is_empty()
+            {
+                if let Ok(manufacturer) = handle.read_manufacturer_string_ascii(&descriptor) {
+                    eprintln!("      Manufacturer: \"{}\"", manufacturer);
+                }
+                if let Ok(product) = handle.read_product_string_ascii(&descriptor) {
+                    eprintln!("           Product: \"{}\"", product);
+                }
+                if let Ok(serial) = handle.read_serial_number_string_ascii(&descriptor) {
+                    eprintln!("         Serial No: \"{}\"", serial);
+                }
+            }
+
+            eprintln!("\n            length: {}", descriptor.length());
+            eprintln!("      device class: {}", descriptor.class_code());
+            eprintln!(
+                "               S/N: {}",
+                descriptor.serial_number_string_index().unwrap_or(0)
+            );
+            eprintln!(
+                "           VID:PID: {:04X}:{:04X}",
+                descriptor.vendor_id(),
+                descriptor.product_id()
+            );
+
+            let version = descriptor.device_version();
+            let bcd = (version.0 as u16) << 8 | (version.1 as u16) << 4 | (version.2 as u16);
+            eprintln!("         bcdDevice: {:04X}", bcd);
+
+            eprintln!(
+                "   iMan:iProd:iSer: {}:{}:{}",
+                descriptor.manufacturer_string_index().unwrap_or(0),
+                descriptor.product_string_index().unwrap_or(0),
+                descriptor.serial_number_string_index().unwrap_or(0)
+            );
+            eprintln!("          nb confs: {}", descriptor.num_configurations());
         }
-        if let Some(product) = &info.product {
-            eprintln!("           Product: \"{}\"", product);
+    }
+
+    fn claim_device_interface(&mut self) -> Result<(), OdinError> {
+        println!("Claiming interface...");
+
+        let handle = &mut self.handle;
+        if handle.claim_interface(self.interface_index as u8).is_err() {
+            #[cfg(target_os = "linux")]
+            {
+                println!("Attempt failed. Detaching driver...");
+                let _ = handle.detach_kernel_driver(self.interface_index as u8);
+                println!("Claiming interface again...");
+                if handle.claim_interface(self.interface_index as u8).is_err() {
+                    return Err(OdinError::InterfaceClaimFailed);
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                return Err(OdinError::InterfaceClaimFailed);
+            }
         }
-        if let Some(serial) = &info.serial_number {
-            eprintln!("         Serial No: \"{}\"", serial);
+
+        self.interface_claimed = true;
+
+        if self.alt_setting_index != 0 {
+            println!("Setting up interface...");
+            handle
+                .set_alternate_setting(self.interface_index as u8, self.alt_setting_index as u8)
+                .map_err(|_| OdinError::InterfaceSetupFailed)?;
         }
-        eprintln!("           VID:PID: {:04X}:{:04X}", info.vid, info.pid);
+
+        Ok(())
+    }
+
+    fn release_device_interface(&mut self) {
+        println!("Releasing device interface...");
+
+        let _ = self.handle.release_interface(self.interface_index as u8);
+
+        #[cfg(target_os = "linux")]
+        {
+            let _ = self.handle.attach_kernel_driver(self.interface_index as u8);
+        }
+
+        self.interface_claimed = false;
     }
 
     pub fn init(&mut self) -> Result<(), OdinError> {
+        println!("Initializing connection...");
+
+        self.claim_device_interface()?;
+        self.initialize_protocol()?;
+
+        Ok(())
+    }
+
+    fn initialize_protocol(&mut self) -> Result<(), OdinError> {
         println!("Initializing protocol...");
 
-        if let Err(e) = self.port.clear(ClearBuffer::All) {
-            print_warning!("Failed to clear serial buffers! Result: {}", e);
+        {
+            println!("Resetting device...");
+            if let Err(e) = self.handle.reset() {
+                print_warning!("Failed to reset device! Result: {}", e);
+            }
         }
 
         self.send_string("ODIN", 1000)
@@ -174,39 +325,28 @@ impl OdinManager {
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
 
-            if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
-                if retry {
-                    print_warning!("Failed to set serial port timeout: {}", e);
-                }
-                continue;
-            }
+            let result = self.handle.write_bulk(
+                self.out_endpoint,
+                data,
+                Duration::from_millis(timeout as u64),
+            );
 
-            if let Err(e) = self.port.write_all(data) {
-                if retry {
-                    print_warning!("Serial port error {} whilst sending data.", e);
-                }
-                continue;
-            }
+            if let Ok(transferred) = result {
+                return transferred == data.len();
+            };
 
-            if let Err(e) = self.port.flush() {
-                if retry {
-                    print_warning!("Serial port error {} whilst flushing data.", e);
-                }
-                continue;
+            if retry {
+                print_warning!(
+                    "libusb error {} whilst sending bulk transfer.",
+                    result.as_ref().unwrap_err()
+                );
             }
-
-            return true;
         }
 
         false
     }
 
-    fn receive_bulk_transfer(
-        &mut self,
-        data: &mut [u8],
-        timeout: i32,
-        retry: bool,
-    ) -> Result<(), ()> {
+    fn receive_bulk_transfer(&mut self, data: &mut [u8], timeout: i32, retry: bool) -> i32 {
         let max_attempts = if retry { 6 } else { 1 };
 
         for attempt in 0..max_attempts {
@@ -217,23 +357,24 @@ impl OdinManager {
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
 
-            if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
-                if retry {
-                    print_warning!("Failed to set serial port timeout: {}", e);
-                }
-                continue;
-            }
+            let result = self.handle.read_bulk(
+                self.in_endpoint,
+                data,
+                Duration::from_millis(timeout as u64),
+            );
 
-            match self.port.read_exact(data) {
-                Ok(_) => return Ok(()),
-                Err(e) => {
-                    if retry {
-                        print_warning!("Serial port error {} whilst receiving data.", e);
-                    }
-                }
+            if let Ok(transferred) = result {
+                return transferred as i32;
+            };
+
+            if retry {
+                print_warning!(
+                    "libusb error {} whilst receiving bulk transfer.",
+                    result.as_ref().unwrap_err()
+                );
             }
         }
-        Err(())
+        -1
     }
 
     fn send_string(&mut self, s: &str, timeout: i32) -> Result<(), OdinError> {
@@ -248,62 +389,31 @@ impl OdinManager {
 
     fn receive_string(&mut self, timeout: i32) -> Result<String, OdinError> {
         let mut buffer = [0u8; 1024];
-        let mut data = Vec::new();
+        let received_size = self.receive_bulk_transfer(&mut buffer, timeout, true);
 
-        self.port
-            .set_timeout(Duration::from_millis(timeout as u64))
-            .map_err(|e| OdinError::SerialError(format!("Failed to set timeout: {}", e)))?;
-
-        match self.port.read(&mut buffer) {
-            Ok(0) => return Err(OdinError::ReceivePacketFailed),
-            Ok(n) => {
-                data.extend_from_slice(&buffer[0..n]);
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                return Err(OdinError::ReceivePacketFailed);
-            }
-            Err(e) => {
-                return Err(OdinError::SerialError(format!("Read error: {}", e)));
-            }
+        if received_size < 0 {
+            return Err(OdinError::ReceivePacketFailed);
         }
 
-        let _ = self.port.set_timeout(Duration::from_millis(10));
-        loop {
-            match self.port.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(n) => {
-                    data.extend_from_slice(&buffer[0..n]);
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                    break;
-                }
-                Err(e) => {
-                    return Err(OdinError::SerialError(format!("Read error: {}", e)));
-                }
-            }
-        }
-
-        let response = String::from_utf8(data)
-            .map_err(|e| OdinError::ParseError(format!("Invalid UTF-8: {}", e)))?;
-
+        let mut data = buffer.to_vec();
+        data.truncate(received_size as usize);
         if self.verbose {
-            eprintln!("Received string: {:?}", response);
+            eprintln!("Received string data ({} bytes): {:?}", received_size, data);
         }
-
-        Ok(response)
+        Ok(String::from_utf8_lossy(&data).into_owned())
     }
 
     fn send_packet(
         &mut self,
         packet: &(impl packets::OutboundPacket + std::fmt::Debug),
         timeout: i32,
-    ) -> Result<(), OdinError> {
+    ) -> Result<(), ()> {
         if self.verbose {
             eprintln!("Sending packet: {:#04X?}", packet);
         }
         let packet_bytes = packet.pack();
         if !self.send_bulk_transfer(&packet_bytes, timeout, true) {
-            return Err(OdinError::SendPacketFailed);
+            return Err(());
         }
         Ok(())
     }
@@ -314,9 +424,13 @@ impl OdinManager {
         timeout: i32,
     ) -> Result<T, OdinError> {
         let mut buffer = vec![0u8; size];
-        self.receive_bulk_transfer(&mut buffer, timeout, true)
-            .map_err(|_| OdinError::ReceivePacketFailed)?;
+        let received_size = self.receive_bulk_transfer(&mut buffer, timeout, true);
 
+        if received_size < 0 {
+            return Err(OdinError::ReceivePacketFailed);
+        }
+
+        buffer.truncate(received_size as usize);
         let parsed = T::unpack(&buffer).map_err(OdinError::ParseError)?;
         if self.verbose {
             eprintln!("Received packet: {:#04X?}", parsed);
@@ -336,7 +450,8 @@ impl OdinManager {
         packet: &RequestPacket,
         timeout: i32,
     ) -> Result<u32, OdinError> {
-        self.send_packet(packet, timeout)?;
+        self.send_packet(packet, timeout)
+            .map_err(|_| OdinError::SendPacketFailed)?;
 
         let response = self.receive_packet::<packets::Response>(timeout)?;
         let expected_type = packet.expected_response_type();
@@ -366,7 +481,8 @@ impl OdinManager {
 
         // Flash pit file
         let packet = packets::FilePartPacket::new(pit_buffer, pit_buffer_size);
-        self.send_packet(&packet, 3000)?;
+        self.send_packet(&packet, 3000)
+            .map_err(|_| OdinError::SendPacketFailed)?;
 
         let response = self.receive_packet::<packets::Response>(3000)?;
 
@@ -571,6 +687,14 @@ impl OdinManager {
     }
 }
 
+impl Drop for OdinManager {
+    fn drop(&mut self) {
+        if self.interface_claimed {
+            self.release_device_interface();
+        }
+    }
+}
+
 pub fn reboot_download() -> Result<(), OdinError> {
     use std::io::Write;
 
@@ -582,7 +706,7 @@ pub fn reboot_download() -> Result<(), OdinError> {
     let mut samsung_port = None;
     for port in ports {
         match port.port_type {
-            SerialPortType::UsbPort(info) if info.vid == VID_SAMSUNG => {
+            serialport::SerialPortType::UsbPort(info) if info.vid == VID_SAMSUNG => {
                 samsung_port = Some(port.port_name);
                 break;
             }
@@ -612,21 +736,30 @@ pub fn reboot_download() -> Result<(), OdinError> {
     Ok(())
 }
 
-pub fn find_download_mode_device(wait: bool) -> Result<(String, UsbPortInfo), OdinError> {
+pub fn find_download_mode_device(
+    context: &Context,
+    wait: bool,
+) -> Result<rusb::Device<Context>, OdinError> {
+    if wait {
+        println!("Waiting for device...");
+    } else {
+        println!("Detecting device...");
+    }
+
     loop {
-        if let Ok(ports) = serialport::available_ports() {
-            for port in ports {
-                if let SerialPortType::UsbPort(info) = port.port_type
-                    && info.vid == VID_SAMSUNG
-                    && SUPPORTED_DEVICES.iter().any(|&(_, pid)| pid == info.pid)
-                {
-                    return Ok((port.port_name, info));
+        if let Ok(devices) = context.devices() {
+            for device in devices.iter() {
+                if let Ok(descriptor) = device.device_descriptor() {
+                    for &(vid, pid) in SUPPORTED_DEVICES {
+                        if descriptor.vendor_id() == vid && descriptor.product_id() == pid {
+                            return Ok(device);
+                        }
+                    }
                 }
             }
         }
 
         if wait {
-            println!("Waiting for device...");
             std::thread::sleep(Duration::from_secs(1));
         } else {
             break;

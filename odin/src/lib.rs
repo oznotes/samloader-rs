@@ -23,3 +23,4 @@ pub use firmware::{
     verify_md5_footer,
 };
 pub use odin_manager::{OdinManager, find_download_mode_device, reboot_download};
+pub use rusb;
