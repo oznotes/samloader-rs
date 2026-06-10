@@ -16,10 +16,20 @@ jobs:
 
       - name: Build samloader
         run: |
+          # Install packages
           sudo apt-get update
           sudo apt-get -y install musl-tools
           rustup update
           rustup target add x86_64-unknown-linux-musl
+
+          # Get linux headers since musl does not include them
+          git clone https://github.com/sabotage-linux/kernel-headers.git
+          cd kernel-headers
+          make ARCH=x86_64 prefix=../linux-usr install
+          cd ../
+          export CFLAGS_x86_64_unknown_linux_musl="-I $(readlink -f linux-usr/include)"
+
+          # Build samloader
           cargo build -p samloader --target x86_64-unknown-linux-musl --release
           tar c -C target/x86_64-unknown-linux-musl/release samloader | \
             xz --x86 --lzma2 > samloader-linux-x86_64.tar.xz
