@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::print_error;
-use samloader_odin::{OdinManager, UsbManager, find_download_mode_device};
+use samloader_odin::{OdinManager, UsbManager, find_download_mode_device, verify_md5_footer};
 use samloader_pit::PitData;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -177,4 +177,21 @@ pub(crate) fn action_reboot_download(_verbose: bool) -> i32 {
             1
         }
     }
+}
+
+pub(crate) fn action_verify_md5(files: &[String]) -> i32 {
+    let mut success = true;
+    for file in files {
+        println!("Verifying MD5 checksum for {}...", file);
+        match verify_md5_footer(file) {
+            Ok(()) => {
+                println!("MD5 verification successful!\n");
+            }
+            Err(e) => {
+                print_error!("MD5 verification failed for \"{}\": {}", file, e);
+                success = false;
+            }
+        }
+    }
+    if success { 0 } else { 1 }
 }

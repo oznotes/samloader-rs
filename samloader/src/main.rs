@@ -276,6 +276,16 @@ fn main() {
                 ),
         )
         .subcommand(
+            Command::new("verify-md5")
+                .about("Verifies the MD5 checksum of one or more .tar.md5 files")
+                .arg(
+                    Arg::new("file")
+                        .required(true)
+                        .num_args(1..)
+                        .help("The .tar.md5 files to verify"),
+                ),
+        )
+        .subcommand(
             Command::new("reboot-download")
                 .about("Boot a connected Samsung device into download mode"),
         )
@@ -390,6 +400,14 @@ fn main() {
                 &partitions,
             );
             std::process::exit(result);
+        }
+        Some(("verify-md5", sub_matches)) => {
+            let files: Vec<String> = sub_matches
+                .get_many::<String>("file")
+                .unwrap()
+                .cloned()
+                .collect();
+            actions::action_verify_md5(&files)
         }
         Some(("reboot-download", _sub_matches)) => actions::action_reboot_download(verbose),
         _ => unreachable!(),

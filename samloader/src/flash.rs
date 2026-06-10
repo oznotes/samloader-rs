@@ -57,11 +57,13 @@ fn scan_tar_packages(
     // MD5 verification of .tar.md5 packages
     if !skip_md5 {
         for pkg in packages {
-            if pkg.to_lowercase().ends_with(".md5")
-                && let Err(e) = verify_md5_footer(pkg)
-            {
-                print_error!("{}", e);
-                return Err(1);
+            if pkg.to_lowercase().ends_with(".md5") {
+                println!("Verifying MD5 checksum for {}...", pkg);
+                if let Err(e) = verify_md5_footer(pkg) {
+                    print_error!("{}", e);
+                    return Err(1);
+                }
+                println!("MD5 verification successful!\n");
             }
         }
     }

@@ -28,8 +28,6 @@ pub fn verify_md5_footer(path: &str) -> Result<(), String> {
         return Err("File is too small to contain a valid MD5 footer".to_string());
     }
 
-    println!("Verifying MD5 checksum for {}...", path);
-
     // Read the last 512 bytes of the file. Since the TAR file must end with at least
     // two blocks of zeroes, the last null byte (0x00) marks the exact boundary
     // between the TAR payload and the appended plain-text MD5 footer.
@@ -92,7 +90,6 @@ pub fn verify_md5_footer(path: &str) -> Result<(), String> {
         return Err("MD5 verification failed! File is corrupted or modified.".to_string());
     }
 
-    println!("MD5 verification successful!\n");
     Ok(())
 }
 
