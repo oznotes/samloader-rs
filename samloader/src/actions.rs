@@ -14,13 +14,19 @@
 // limitations under the License.
 
 use crate::print_error;
-use samloader_odin::{OdinManager, RusbBackend, UsbBackend, verify_md5_footer};
+use samloader_odin::{
+    OdinManager, RusbBackend, SerialBackend, UsbBackend, create_backend, verify_md5_footer,
+};
 use samloader_pit::PitData;
 use std::fs::File;
 use std::io::{Read, Write};
 
-pub(crate) fn action_detect(_verbose: bool, wait: bool) -> i32 {
-    if RusbBackend::find_device(wait).is_ok() {
+pub(crate) fn action_detect(usb_backend: &str, _verbose: bool, wait: bool) -> i32 {
+    let detected = match usb_backend {
+        "serial" => SerialBackend::find_device(wait).is_ok(),
+        _ => RusbBackend::find_device(wait).is_ok(),
+    };
+    if detected {
         println!("Device detected");
         0
     } else {
@@ -29,7 +35,7 @@ pub(crate) fn action_detect(_verbose: bool, wait: bool) -> i32 {
     }
 }
 
-pub(crate) fn action_dump_pit(output: &str, verbose: bool, wait: bool) -> i32 {
+pub(crate) fn action_dump_pit(usb_backend: &str, output: &str, verbose: bool, wait: bool) -> i32 {
     if output.is_empty() {
         println!("Output file was not specified.\n");
         return 0;
@@ -45,7 +51,7 @@ pub(crate) fn action_dump_pit(output: &str, verbose: bool, wait: bool) -> i32 {
     };
 
     // Download PIT file from device.
-    let usb = match RusbBackend::new(verbose, wait) {
+    let usb = match create_backend(usb_backend, verbose, wait) {
         Ok(u) => u,
         Err(e) => {
             print_error!("{}", e);
@@ -87,7 +93,7 @@ pub(crate) fn action_dump_pit(output: &str, verbose: bool, wait: bool) -> i32 {
     if success { 0 } else { 1 }
 }
 
-pub(crate) fn action_print_pit(file: &str, verbose: bool, wait: bool) -> i32 {
+pub(crate) fn action_print_pit(usb_backend: &str, file: &str, verbose: bool, wait: bool) -> i32 {
     if !file.is_empty() {
         let mut f = match File::open(file) {
             Ok(f) => f,
@@ -114,7 +120,7 @@ pub(crate) fn action_print_pit(file: &str, verbose: bool, wait: bool) -> i32 {
             }
         }
     } else {
-        let usb = match RusbBackend::new(verbose, wait) {
+        let usb = match create_backend(usb_backend, verbose, wait) {
             Ok(u) => u,
             Err(e) => {
                 print_error!("{}", e);

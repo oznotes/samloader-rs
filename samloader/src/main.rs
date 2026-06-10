@@ -77,6 +77,14 @@ fn main() {
                 .global(true)
                 .help(VERBOSE_HELP),
         )
+        .arg(
+            Arg::new("usb_backend")
+                .long("usb-backend")
+                .global(true)
+                .default_value("libusb")
+                .value_parser(["libusb", "serial"])
+                .help("The USB backend to use (libusb or serial)"),
+        )
         .subcommand(
             Command::new("download")
                 .about("Download firmware")
@@ -292,6 +300,10 @@ fn main() {
         .get_matches();
 
     let verbose = matches.get_flag("verbose");
+    let usb_backend = matches
+        .get_one::<String>("usb_backend")
+        .map(|s| s.as_str())
+        .unwrap_or("libusb");
 
     let result = match matches.subcommand() {
         Some(("download", sub_m)) => {
@@ -328,14 +340,16 @@ fn main() {
             0
         }
         Some(("detect", sub_matches)) => {
-            actions::action_detect(verbose, sub_matches.get_flag("wait"))
+            actions::action_detect(usb_backend, verbose, sub_matches.get_flag("wait"))
         }
         Some(("dump-pit", sub_matches)) => actions::action_dump_pit(
+            usb_backend,
             sub_matches.get_one::<String>("output").unwrap(),
             verbose,
             sub_matches.get_flag("wait"),
         ),
         Some(("print-pit", sub_matches)) => actions::action_print_pit(
+            usb_backend,
             sub_matches
                 .get_one::<String>("file")
                 .map(|s| s.as_str())
@@ -390,6 +404,7 @@ fn main() {
             }
 
             let result = flash::action_flash(
+                usb_backend,
                 sub_matches.get_flag("repartition"),
                 verbose,
                 sub_matches.get_flag("wait"),

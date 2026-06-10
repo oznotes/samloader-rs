@@ -15,6 +15,7 @@
 
 use crate::error::OdinError;
 use rusb::{Context, DeviceHandle, UsbContext};
+use std::io::{Read, Write};
 use std::time::Duration;
 
 macro_rules! print_warning {
@@ -311,6 +312,169 @@ impl Drop for RusbBackend {
         #[cfg(target_os = "linux")]
         {
             let _ = self.handle.attach_kernel_driver(self.interface_index as u8);
+        }
+    }
+}
+
+pub struct SerialBackend {
+    verbose: bool,
+    port: Box<dyn serialport::SerialPort>,
+}
+
+impl SerialBackend {
+    fn print_device_info(info: &serialport::UsbPortInfo) {
+        if let Some(ref manufacturer) = info.manufacturer {
+            eprintln!("      Manufacturer: \"{}\"", manufacturer);
+        }
+        if let Some(ref product) = info.product {
+            eprintln!("           Product: \"{}\"", product);
+        }
+        if let Some(ref serial) = info.serial_number {
+            eprintln!("         Serial No: \"{}\"", serial);
+        }
+        eprintln!("           VID:PID: {:04X}:{:04X}", info.vid, info.pid);
+    }
+}
+
+impl UsbBackend for SerialBackend {
+    type UsbDevice = serialport::SerialPortInfo;
+
+    fn new(verbose: bool, wait_for_device: bool) -> Result<Self, OdinError> {
+        let device = Self::find_device(wait_for_device)?;
+
+        let info = match &device.port_type {
+            serialport::SerialPortType::UsbPort(info) => info,
+            _ => return Err(OdinError::DeviceNotFound),
+        };
+
+        if verbose {
+            Self::print_device_info(info);
+        }
+
+        let port = serialport::new(&device.port_name, 115_200)
+            .timeout(Duration::from_millis(1000))
+            .open()
+            .map_err(|e| {
+                OdinError::SerialError(format!("Failed to open port {}: {}", device.port_name, e))
+            })?;
+
+        Ok(Self { verbose, port })
+    }
+
+    fn find_device(wait: bool) -> Result<Self::UsbDevice, OdinError> {
+        if wait {
+            println!("Waiting for device...");
+        } else {
+            println!("Detecting device...");
+        }
+
+        loop {
+            if let Ok(ports) = serialport::available_ports() {
+                for port in ports {
+                    if let serialport::SerialPortType::UsbPort(ref info) = port.port_type {
+                        for &(vid, pid) in SUPPORTED_DEVICES {
+                            if info.vid == vid && info.pid == pid {
+                                return Ok(port);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if wait {
+                std::thread::sleep(Duration::from_secs(1));
+            } else {
+                break;
+            }
+        }
+
+        Err(OdinError::DeviceNotFound)
+    }
+}
+
+impl UsbTransfer for SerialBackend {
+    fn send_data(&mut self, data: &[u8], timeout: i32, retry: bool) -> bool {
+        let max_attempts = if retry { 6 } else { 1 };
+        for attempt in 0..max_attempts {
+            if attempt > 0 {
+                if self.verbose {
+                    eprintln!(" Retrying...");
+                }
+                std::thread::sleep(Duration::from_millis(250 * attempt));
+            }
+
+            if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
+                if retry {
+                    print_warning!("Failed to set serial port timeout: {}", e);
+                }
+                continue;
+            }
+
+            match self.port.write_all(data) {
+                Ok(_) => {
+                    let _ = self.port.flush();
+                    return true;
+                }
+                Err(e) => {
+                    if retry {
+                        print_warning!("Serial error whilst sending transfer: {}", e);
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    fn receive_data(&mut self, data: &mut [u8], timeout: i32, retry: bool) -> i32 {
+        let max_attempts = if retry { 6 } else { 1 };
+
+        for attempt in 0..max_attempts {
+            if attempt > 0 {
+                if self.verbose {
+                    eprintln!(" Retrying...");
+                }
+                std::thread::sleep(Duration::from_millis(250 * attempt));
+            }
+
+            if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
+                if retry {
+                    print_warning!("Failed to set serial port timeout: {}", e);
+                }
+                continue;
+            }
+
+            match self.port.read(data) {
+                Ok(bytes_read) => {
+                    return bytes_read as i32;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                    // Timed out, retry if allowed
+                }
+                Err(e) => {
+                    if retry {
+                        print_warning!("Serial error whilst receiving transfer: {}", e);
+                    }
+                }
+            }
+        }
+        -1
+    }
+}
+
+pub fn create_backend(
+    usb_backend: &str,
+    verbose: bool,
+    wait: bool,
+) -> Result<Box<dyn UsbTransfer>, OdinError> {
+    match usb_backend {
+        "serial" => {
+            let backend = SerialBackend::new(verbose, wait)?;
+            Ok(Box::new(backend))
+        }
+        _ => {
+            let backend = RusbBackend::new(verbose, wait)?;
+            Ok(Box::new(backend))
         }
     }
 }

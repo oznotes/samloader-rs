@@ -18,7 +18,7 @@ use crate::PartitionArg;
 use crate::print_error;
 use samloader_odin::{
     FirmwareFile, FirmwareInfo, FirmwareLz4File, FirmwareSource, Lz4FrameHeader, OdinManager,
-    RusbBackend, TarEntryReader, UsbBackend, verify_md5_footer,
+    TarEntryReader, create_backend, verify_md5_footer,
 };
 use samloader_pit::{PitData, PitEntry};
 use std::collections::HashSet;
@@ -331,6 +331,7 @@ fn create_firmware_info<'a>(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn action_flash(
+    usb_backend: &str,
     repartition: bool,
     verbose: bool,
     wait: bool,
@@ -377,7 +378,7 @@ pub(crate) fn action_flash(
     }
 
     // 3. Initialize connection session and parse the PIT data
-    let usb = match RusbBackend::new(verbose, wait) {
+    let usb = match create_backend(usb_backend, verbose, wait) {
         Ok(u) => u,
         Err(e) => {
             print_error!("{}", e);

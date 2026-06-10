@@ -35,10 +35,10 @@ const FILE_TRANSFER_PACKET_SIZE_DEFAULT: usize = 0x20000;
 const FILE_TRANSFER_SEQUENCE_TIMEOUT_DEFAULT: u32 = 30000;
 
 impl OdinManager {
-    pub fn new(usb: impl UsbTransfer + 'static, verbose: bool) -> Self {
+    pub fn new(usb: Box<dyn UsbTransfer>, verbose: bool) -> Self {
         Self {
             verbose,
-            usb: Box::new(usb),
+            usb,
 
             file_transfer_sequence_max_length: FILE_TRANSFER_SEQUENCE_MAX_LENGTH_DEFAULT,
             file_transfer_packet_size: FILE_TRANSFER_PACKET_SIZE_DEFAULT,
