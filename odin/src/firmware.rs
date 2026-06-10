@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use md5::Context;
+use fast_md5::Md5;
 use samloader_pit::PitEntry;
 use std::fs::File;
 use std::io::{Read, Result as IoResult, Seek, SeekFrom};
@@ -73,7 +73,7 @@ pub fn verify_md5_footer(path: &str) -> Result<(), String> {
 
     // Reset file pointer and compute MD5 over the payload only
     file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
-    let mut context = Context::new();
+    let mut hasher = Md5::new();
     let mut buffer = [0u8; 128 * 1024];
     let mut remaining = payload_size;
 
@@ -81,12 +81,12 @@ pub fn verify_md5_footer(path: &str) -> Result<(), String> {
         let to_read = std::cmp::min(remaining, buffer.len() as u64) as usize;
         file.read_exact(&mut buffer[..to_read])
             .map_err(|e| e.to_string())?;
-        context.consume(&buffer[..to_read]);
+        hasher.update(&buffer[..to_read]);
         remaining -= to_read as u64;
     }
 
-    let calculated_digest = context.finalize();
-    if calculated_digest.as_slice() != expected_bytes {
+    let calculated_digest = hasher.finalize();
+    if calculated_digest != expected_bytes {
         return Err("MD5 verification failed! File is corrupted or modified.".to_string());
     }
 

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use md5::{Digest, Md5};
 use roxmltree::Document;
 use std::collections::HashMap;
 
@@ -205,7 +204,7 @@ impl BinaryInform {
             filename: kv.remove("BINARY_NAME")?,
             path: kv.remove("MODEL_PATH")?,
             size,
-            key: Md5::digest(key.as_bytes()).to_vec(),
+            key: fast_md5::digest(key.as_bytes()).to_vec(),
             model_type: kv.remove("DEVICE_MODEL_TYPE")?,
             region: kv.remove("BINARY_LOCAL_CODE")?,
         })

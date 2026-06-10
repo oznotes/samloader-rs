@@ -11,5 +11,5 @@ keywords = ["samsung", "firmware"]
 reqwest = { workspace = true }
 aes = { workspace = true }
 ecb = { workspace = true }
-md-5 = { workspace = true }
+fast-md5 = { workspace = true }
 roxmltree = { workspace = true }
