@@ -34,36 +34,75 @@ macro_rules! print_error {
     };
 }
 
-const VERBOSE_HELP: &str = "Enable verbose output";
-const NO_REBOOT_HELP: &str = "Disables automatic reboot after flashing.";
-const WAIT_HELP: &str = "Waits until a compatible device is connected.";
-const REPARTITION_HELP: &str = "Repartition the device. WARNING: It's strongly recommended you specify all files at your disposal.";
-const SKIP_SIZE_CHECK_HELP: &str = "Do not verify that files fit in the specified partition.";
-const PIT_HELP: &str = "The PIT file to use for repartitioning or flashing.";
+// =============================================================================
+// CLI String Constants
+// =============================================================================
 
-const DETECT_ABOUT: &str = "Indicates whether or not a download mode device can be detected.";
-const DETECT_HELP: &str = r#"Indicates whether or not a download mode device can be detected.
+// --- Global Options ---
+const VERBOSE_HELP: &str = "Enable verbose output";
+const WAIT_HELP: &str = "Waits until a compatible device is connected";
+const USB_BACKEND_HELP: &str = "The USB backend to use";
+
+// --- Common Subcommand Options ---
+const MODEL_HELP: &str = "The model name (e.g. SM-S931U1)";
+const REGION_HELP: &str = "Region CSC code (e.g. XAA)";
+
+// --- Download Command (`download`) ---
+const VERSION_HELP: &str =
+    "Firmware version string (e.g. PDA/CSC/MODEM). If omitted, downloads the latest";
+const THREADS_HELP: &str = "Number of parallel connections";
+const OUT_DIR_HELP: &str = "Output directory";
+const OUT_FILE_HELP: &str = "Output file path";
+
+// --- Check Update Command (`check-update`) ---
+const ALL_HELP: &str = "List all available firmware versions, sorted from old to new";
+
+// --- Detect Command (`detect`) ---
+const DETECT_ABOUT: &str = "Indicates whether or not a download mode device can be detected";
+const DETECT_HELP: &str = r#"Indicates whether or not a download mode device can be detected
 
 Returns instantly per default, or waits until device is found
-when --wait argument is used."#;
+when --wait argument is used"#;
 
-const DUMP_PIT_ABOUT: &str = "Dumps the connected device's PIT file to the specified output file.";
+// --- Dump PIT Command (`dump-pit`) ---
+const DUMP_PIT_ABOUT: &str = "Dumps the connected device's PIT file to the specified output file";
 const DUMP_PIT_HELP: &str = r#"Dumps the connected device's PIT file to the specified
-output file."#;
-const DUMP_PIT_OUTPUT_HELP: &str = "Output file path for the dumped PIT file.";
+output file"#;
+const DUMP_PIT_OUTPUT_HELP: &str = "Output file path for the dumped PIT file";
 
-const PRINT_PIT_ABOUT: &str = "Prints the contents of a PIT file in a human readable format.";
+// --- Print PIT Command (`print-pit`) ---
+const PRINT_PIT_ABOUT: &str = "Prints the contents of a PIT file in a human readable format";
 const PRINT_PIT_HELP: &str = r#"Prints the contents of a PIT file in a human readable format. If
 a filename is not provided then Heimdall retrieves the PIT file from the
-connected device."#;
-const PRINT_PIT_FILE_HELP: &str = "The PIT file to print. If not provided, Heimdall retrieves the PIT file from the connected device.";
+connected device"#;
+const PRINT_PIT_FILE_HELP: &str = "The PIT file to print. If not provided, Heimdall retrieves \
+                                   the PIT file from the connected device";
 
-const FLASH_ABOUT: &str = "Flashes one or more firmware files to your phone.";
+// --- Flash Command (`flash`) ---
+const FLASH_ABOUT: &str = "Flashes one or more firmware files to your phone";
 const FLASH_HELP: &str = r#"Flashes one or more firmware files to your phone. Partition names
 (or identifiers) can be obtained by executing the print-pit action.
 
 Example explicit flashing: samloader flash -p RECOVERY recovery.img
 Example auto-matching: samloader flash -f boot.img"#;
+
+const NO_REBOOT_HELP: &str = "Disables automatic reboot after flashing";
+const REPARTITION_HELP: &str = "Repartition the device. WARNING: It's strongly recommended \
+                                you specify all files at your disposal";
+const SKIP_SIZE_CHECK_HELP: &str = "Do not verify that files fit in the specified partition";
+const PIT_HELP: &str = "The PIT file to use for repartitioning or flashing";
+const SKIP_MD5_HELP: &str = "Skip MD5 checksum verification";
+const BL_HELP: &str = "BL tar package file";
+const AP_HELP: &str = "AP tar package file";
+const CP_HELP: &str = "CP tar package file";
+const CSC_HELP: &str = "CSC/HOME_CSC tar package file";
+const USERDATA_HELP: &str = "USERDATA tar package file";
+const PARTITION_HELP: &str = "Explicit partition name/identifier and file to flash";
+const FILE_HELP: &str = "Automatic partition name matching file to flash";
+
+// --- Verify MD5 Command (`verify-md5`) ---
+const VERIFY_MD5_ABOUT: &str = "Verifies the MD5 checksum of one or more .tar.md5 files";
+const VERIFY_MD5_FILE_HELP: &str = "The .tar.md5 files to verify";
 
 fn main() {
     let matches = Command::new("samloader")
@@ -96,7 +135,7 @@ fn main() {
                     "libusb"
                 })
                 .value_parser(["libusb", "vcom"])
-                .help("The USB backend to use (libusb or vcom)"),
+                .help(USB_BACKEND_HELP),
         )
         .subcommand(
             Command::new("download")
@@ -106,20 +145,20 @@ fn main() {
                         .short('m')
                         .long("model")
                         .required(true)
-                        .help("The model name (e.g. SM-S931U1)"),
+                        .help(MODEL_HELP),
                 )
                 .arg(
                     Arg::new("region")
                         .short('r')
                         .long("region")
                         .required(true)
-                        .help("Region CSC code (e.g. XAA)"),
+                        .help(REGION_HELP),
                 )
                 .arg(
                     Arg::new("version")
                         .short('v')
                         .long("version")
-                        .help("Firmware version string (e.g. PDA/CSC/MODEM). If omitted, downloads the latest."),
+                        .help(VERSION_HELP),
                 )
                 .arg(
                     Arg::new("threads")
@@ -127,19 +166,19 @@ fn main() {
                         .long("threads")
                         .default_value("8")
                         .value_parser(clap::value_parser!(u64))
-                        .help("Number of parallel connections"),
+                        .help(THREADS_HELP),
                 )
                 .arg(
                     Arg::new("out_dir")
                         .short('d')
                         .long("out-dir")
-                        .help("Output directory"),
+                        .help(OUT_DIR_HELP),
                 )
                 .arg(
                     Arg::new("out_file")
                         .short('o')
                         .long("out-file")
-                        .help("Output file path"),
+                        .help(OUT_FILE_HELP),
                 ),
         )
         .subcommand(
@@ -150,20 +189,20 @@ fn main() {
                         .short('m')
                         .long("model")
                         .required(true)
-                        .help("The model name (e.g. SM-S931U1)"),
+                        .help(MODEL_HELP),
                 )
                 .arg(
                     Arg::new("region")
                         .short('r')
                         .long("region")
                         .required(true)
-                        .help("Region CSC code (e.g. XAA)"),
+                        .help(REGION_HELP),
                 )
                 .arg(
                     Arg::new("all")
                         .short('a')
                         .long("all")
-                        .help("List all available firmware versions, sorted from old to new")
+                        .help(ALL_HELP)
                         .action(ArgAction::SetTrue),
                 ),
         )
@@ -245,7 +284,7 @@ fn main() {
                     Arg::new("skip-md5")
                         .long("skip-md5")
                         .action(ArgAction::SetTrue)
-                        .help("Skip MD5 checksum verification"),
+                        .help(SKIP_MD5_HELP),
                 )
                 .arg(Arg::new("pit").long("pit").num_args(1).help(PIT_HELP))
                 .arg(
@@ -253,35 +292,35 @@ fn main() {
                         .short('b')
                         .long("BL")
                         .num_args(1)
-                        .help("BL tar package file"),
+                        .help(BL_HELP),
                 )
                 .arg(
                     Arg::new("ap")
                         .short('a')
                         .long("AP")
                         .num_args(1)
-                        .help("AP tar package file"),
+                        .help(AP_HELP),
                 )
                 .arg(
                     Arg::new("cp")
                         .short('c')
                         .long("CP")
                         .num_args(1)
-                        .help("CP tar package file"),
+                        .help(CP_HELP),
                 )
                 .arg(
                     Arg::new("csc")
                         .short('s')
                         .long("CSC")
                         .num_args(1)
-                        .help("CSC/HOME_CSC tar package file"),
+                        .help(CSC_HELP),
                 )
                 .arg(
                     Arg::new("userdata")
                         .short('u')
                         .long("USERDATA")
                         .num_args(1)
-                        .help("USERDATA tar package file"),
+                        .help(USERDATA_HELP),
                 )
                 .arg(
                     Arg::new("partition")
@@ -290,7 +329,7 @@ fn main() {
                         .action(ArgAction::Append)
                         .num_args(2)
                         .value_names(["PARTITION", "FILE"])
-                        .help("Explicit partition name/identifier and file to flash"),
+                        .help(PARTITION_HELP),
                 )
                 .arg(
                     Arg::new("file")
@@ -299,18 +338,16 @@ fn main() {
                         .action(ArgAction::Append)
                         .num_args(1)
                         .value_name("FILE")
-                        .help("Automatic partition name matching file to flash"),
+                        .help(FILE_HELP),
                 ),
         )
         .subcommand(
-            Command::new("verify-md5")
-                .about("Verifies the MD5 checksum of one or more .tar.md5 files")
-                .arg(
-                    Arg::new("file")
-                        .required(true)
-                        .num_args(1..)
-                        .help("The .tar.md5 files to verify"),
-                ),
+            Command::new("verify-md5").about(VERIFY_MD5_ABOUT).arg(
+                Arg::new("file")
+                    .required(true)
+                    .num_args(1..)
+                    .help(VERIFY_MD5_FILE_HELP),
+            ),
         )
         .subcommand(
             Command::new("reboot-download")
