@@ -25,7 +25,7 @@ macro_rules! print_warning {
     };
 }
 
-pub const VID_SAMSUNG: u16 = 0x04E8;
+pub(crate) const VID_SAMSUNG: u16 = 0x04E8;
 const PID_GALAXY_S: u16 = 0x6601;
 const PID_GALAXY_S2: u16 = 0x685D;
 const PID_DROID_CHARGE: u16 = 0x68C3;

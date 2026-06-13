@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod error;
-pub mod firmware;
-pub mod odin;
-pub mod packets;
-pub mod usb;
+mod error;
+mod firmware;
+mod odin;
+mod packets;
+mod usb;
 
 pub use error::OdinError;
 pub use firmware::{
@@ -24,5 +24,8 @@ pub use firmware::{
     verify_md5_footer,
 };
 pub use odin::{OdinManager, reboot_download};
-pub use rusb;
 pub use usb::{RusbBackend, SerialBackend, UsbBackend, UsbTransfer, create_backend};
+
+// Re-export public dependencies to avoid type mismatch and SemVer issues in public APIs.
+pub use rusb;
+pub use samloader_pit;

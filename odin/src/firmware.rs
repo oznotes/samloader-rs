@@ -94,10 +94,10 @@ pub fn verify_md5_footer(path: &str) -> Result<(), String> {
 }
 
 pub struct TarEntryReader {
-    pub file: File,
-    pub start_offset: u64,
-    pub size: u64,
-    pub current_offset: u64,
+    file: File,
+    start_offset: u64,
+    size: u64,
+    current_offset: u64,
 }
 
 impl TarEntryReader {

@@ -29,7 +29,7 @@ const FOTA_FILENAME_LENGTH: usize = 32;
 
 #[derive(BinRead, BinWrite, PartialEq, Eq)]
 pub struct FixedString<const LEN: usize> {
-    pub data: [u8; LEN],
+    data: [u8; LEN],
 }
 
 impl<const LEN: usize> FixedString<LEN> {
