@@ -211,7 +211,7 @@ fn execute_flash_pipeline(
     let total_bytes: u64 = partition_infos
         .iter()
         .map(|part| match part {
-            FirmwareInfo::Normal(f) => f.file_size,
+            FirmwareInfo::Normal(f) => f.file.len() as u64,
             FirmwareInfo::Lz4(f) => f.header.content_size,
         })
         .sum();
@@ -323,7 +323,6 @@ fn create_firmware_info<'a>(
         Some(FirmwareInfo::Normal(FirmwareFile {
             pit_entry,
             file: mmap,
-            file_size: source_size,
         }))
     }
 }

@@ -295,11 +295,8 @@ impl OdinManager {
         self.request_and_response(&packet, 3000)
             .map_err(|_| OdinError::FileTransferInitFailed)?;
 
-        let sequences = crate::firmware::SequenceIterator::new(
-            &info.file,
-            info.file_size,
-            self.file_transfer_packet_size * self.file_transfer_sequence_max_length,
-        );
+        let sequences =
+            info.sequences(self.file_transfer_packet_size * self.file_transfer_sequence_max_length);
 
         let mut sequences = sequences.peekable();
         while let Some(sequence_data) = sequences.next() {
@@ -333,11 +330,8 @@ impl OdinManager {
         self.request_and_response(&packet, 3000)
             .map_err(|_| OdinError::FileTransferInitFailed)?;
 
-        let sequences = crate::firmware::Lz4SequenceIterator::new(
-            &info.file,
-            &info.header,
-            self.file_transfer_packet_size * self.file_transfer_sequence_max_length,
-        );
+        let sequences =
+            info.sequences(self.file_transfer_packet_size * self.file_transfer_sequence_max_length);
 
         let mut sequences = sequences.peekable();
         while let Some((decompressed_size, sequence_data)) = sequences.next() {

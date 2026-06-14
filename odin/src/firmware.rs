@@ -186,13 +186,35 @@ impl Lz4FrameHeader {
 pub struct FirmwareFile<'a> {
     pub pit_entry: &'a PitEntry,
     pub file: Mmap,
-    pub file_size: u64,
+}
+
+impl<'a> FirmwareFile<'a> {
+    pub(crate) fn sequences(&self, sequence_max_bytes: usize) -> SequenceIterator<'_> {
+        SequenceIterator {
+            file: &self.file,
+            sequence_max_bytes,
+            bytes_read: 0,
+        }
+    }
 }
 
 pub struct FirmwareLz4File<'a> {
     pub pit_entry: &'a PitEntry,
     pub file: Mmap,
     pub header: Lz4FrameHeader,
+}
+
+impl<'a> FirmwareLz4File<'a> {
+    pub(crate) fn sequences(&self, sequence_max_bytes: usize) -> Lz4SequenceIterator<'_> {
+        Lz4SequenceIterator {
+            file: &self.file,
+            header: &self.header,
+            sequence_max_bytes,
+            remaining_decompressed: self.header.content_size,
+            bytes_read: LZ4_HEADER_SIZE,
+            finished: false,
+        }
+    }
 }
 
 pub enum FirmwareInfo<'a> {
@@ -202,7 +224,6 @@ pub enum FirmwareInfo<'a> {
 
 pub(crate) struct SequenceIterator<'a> {
     file: &'a Mmap,
-    file_size: u64,
     sequence_max_bytes: usize,
     bytes_read: u64,
 }
@@ -211,11 +232,12 @@ impl<'a> Iterator for SequenceIterator<'a> {
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.bytes_read >= self.file_size {
+        let file_size = self.file.len() as u64;
+        if self.bytes_read >= file_size {
             return None;
         }
 
-        let remaining = self.file_size - self.bytes_read;
+        let remaining = file_size - self.bytes_read;
         let sequence_byte_count = std::cmp::min(remaining, self.sequence_max_bytes as u64) as usize;
 
         let start = self.bytes_read as usize;
@@ -228,17 +250,6 @@ impl<'a> Iterator for SequenceIterator<'a> {
     }
 }
 
-impl<'a> SequenceIterator<'a> {
-    pub(crate) fn new(file: &'a Mmap, file_size: u64, sequence_max_bytes: usize) -> Self {
-        Self {
-            file,
-            file_size,
-            sequence_max_bytes,
-            bytes_read: 0,
-        }
-    }
-}
-
 pub(crate) struct Lz4SequenceIterator<'a> {
     file: &'a Mmap,
     header: &'a Lz4FrameHeader,
@@ -246,24 +257,6 @@ pub(crate) struct Lz4SequenceIterator<'a> {
     remaining_decompressed: u64,
     bytes_read: usize,
     finished: bool,
-}
-
-impl<'a> Lz4SequenceIterator<'a> {
-    pub(crate) fn new(
-        file: &'a Mmap,
-        header: &'a Lz4FrameHeader,
-        sequence_max_bytes: usize,
-    ) -> Self {
-        Self {
-            file,
-            header,
-            sequence_max_bytes,
-            remaining_decompressed: header.content_size,
-            // We skip the header, and start with reading blocks
-            bytes_read: LZ4_HEADER_SIZE,
-            finished: false,
-        }
-    }
 }
 
 impl<'a> Iterator for Lz4SequenceIterator<'a> {
