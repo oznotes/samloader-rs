@@ -17,7 +17,7 @@ use crate::error::OdinError;
 use crate::packets;
 use crate::packets::{InboundPacket, PitDataPacket, RequestPacket};
 use crate::usb::UsbTransfer;
-use samloader_pit::BinaryType;
+use samloader_pit::{BinaryType, PitEntry};
 use std::time::Duration;
 
 pub struct OdinManager {
@@ -301,42 +301,61 @@ impl OdinManager {
         self.bootloader_protocol_version
     }
 
-    pub fn send_file(&mut self, info: &crate::firmware::FirmwareFile) -> Result<(), OdinError> {
+    fn send_raw_sequences<Iter, Bytes>(
+        &mut self,
+        sequences: Iter,
+        pit_entry: &PitEntry,
+    ) -> Result<(), OdinError>
+    where
+        Bytes: AsRef<[u8]>,
+        Iter: Iterator<Item = Bytes>,
+    {
         let packet = RequestPacket::file_transfer_flash();
         self.request_and_response(&packet, 3000)
             .map_err(|_| OdinError::FileTransferInitFailed)?;
 
-        let sequences =
-            info.sequences(self.file_transfer_packet_size * self.file_transfer_sequence_max_length);
-
         let mut sequences = sequences.peekable();
         while let Some(sequence_data) = sequences.next() {
+            let sequence_data = sequence_data.as_ref();
             let start_packet = RequestPacket::flash_part_file_transfer(sequence_data.len() as u32);
 
             let is_last_sequence = sequences.peek().is_none();
-            let end_packet = match info.pit_entry.binary_type {
+            let end_packet = match pit_entry.binary_type {
                 BinaryType::ApplicationProcessor => RequestPacket::end_phone_file_transfer(
                     sequence_data.len() as u32,
-                    info.pit_entry,
+                    pit_entry,
                     is_last_sequence,
                 ),
                 BinaryType::CommunicationProcessor => RequestPacket::end_modem_file_transfer(
                     sequence_data.len() as u32,
-                    info.pit_entry,
+                    pit_entry,
                     is_last_sequence,
                 ),
             };
 
-            self.send_file_sequence(&start_packet, &end_packet, sequence_data)?;
+            self.send_one_sequence(&start_packet, &end_packet, sequence_data)?;
         }
 
         Ok(())
+    }
+
+    pub fn send_file(&mut self, info: &crate::firmware::FirmwareFile) -> Result<(), OdinError> {
+        let sequences =
+            info.sequences(self.file_transfer_packet_size * self.file_transfer_sequence_max_length);
+        self.send_raw_sequences(sequences, info.pit_entry)
     }
 
     pub fn send_lz4_file(
         &mut self,
         info: &crate::firmware::FirmwareLz4File,
     ) -> Result<(), OdinError> {
+        if !self.lz4_supported {
+            let sequences = info
+                .sequences(self.file_transfer_packet_size * self.file_transfer_sequence_max_length)
+                .decompressed();
+            return self.send_raw_sequences(sequences, info.pit_entry);
+        }
+
         let packet = RequestPacket::lz4_file_transfer_flash();
         self.request_and_response(&packet, 3000)
             .map_err(|_| OdinError::FileTransferInitFailed)?;
@@ -363,13 +382,13 @@ impl OdinManager {
                 ),
             };
 
-            self.send_file_sequence(&start_packet, &end_packet, sequence_data)?;
+            self.send_one_sequence(&start_packet, &end_packet, sequence_data)?;
         }
 
         Ok(())
     }
 
-    fn send_file_sequence(
+    fn send_one_sequence(
         &mut self,
         start_packet: &RequestPacket,
         end_packet: &RequestPacket,

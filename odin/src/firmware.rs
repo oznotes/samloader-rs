@@ -209,6 +209,18 @@ pub(crate) struct Lz4SequenceIterator<'a> {
     finished: bool,
 }
 
+impl<'a> Lz4SequenceIterator<'a> {
+    pub(crate) fn decompressed(self) -> Lz4DecompressedSequenceIterator<'a> {
+        Lz4DecompressedSequenceIterator {
+            file: self.file,
+            max_blocks: self.max_blocks,
+            remaining_decompressed: self.remaining_decompressed,
+            bytes_read: self.bytes_read,
+            finished: self.finished,
+        }
+    }
+}
+
 impl<'a> Iterator for Lz4SequenceIterator<'a> {
     type Item = (usize, &'a [u8]);
 
@@ -260,5 +272,75 @@ impl<'a> Iterator for Lz4SequenceIterator<'a> {
         self.remaining_decompressed -= decompressed_size as u64;
 
         Some((decompressed_size, &self.file[start_pos..end_pos]))
+    }
+}
+
+pub struct Lz4DecompressedSequenceIterator<'a> {
+    file: &'a Mmap,
+    max_blocks: usize,
+    remaining_decompressed: u64,
+    bytes_read: usize,
+    finished: bool,
+}
+
+impl<'a> Iterator for Lz4DecompressedSequenceIterator<'a> {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+
+        let mut decompressed_data = Vec::new();
+        let mut num_blocks = 0;
+
+        while num_blocks < self.max_blocks {
+            if self.bytes_read + 4 > self.file.len() {
+                self.finished = true;
+                break;
+            }
+            let block_size = u32::from_le_bytes(
+                self.file[self.bytes_read..self.bytes_read + 4]
+                    .try_into()
+                    .unwrap(),
+            );
+
+            if block_size == 0 {
+                self.bytes_read += 4; // Advance past EndMark
+                self.finished = true;
+                break;
+            }
+
+            let is_compressed = (block_size & 0x8000_0000) == 0;
+            let data_size = (block_size & 0x7FFF_FFFF) as usize;
+            if self.bytes_read + 4 + data_size > self.file.len() {
+                self.finished = true;
+                break;
+            }
+
+            let block_uncompressed_size =
+                std::cmp::min(self.remaining_decompressed, 1024 * 1024) as usize;
+            let block_bytes = &self.file[self.bytes_read + 4..self.bytes_read + 4 + data_size];
+
+            if is_compressed {
+                let decompressed_block =
+                    lz4_flex::block::decompress(block_bytes, block_uncompressed_size)
+                        .map_err(|e| format!("LZ4 decompression failed: {}", e))
+                        .ok()?;
+                decompressed_data.extend_from_slice(&decompressed_block);
+            } else {
+                decompressed_data.extend_from_slice(block_bytes);
+            }
+
+            self.bytes_read += 4 + data_size;
+            self.remaining_decompressed -= block_uncompressed_size as u64;
+            num_blocks += 1;
+        }
+
+        if decompressed_data.is_empty() {
+            return None;
+        }
+
+        Some(decompressed_data)
     }
 }

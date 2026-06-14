@@ -267,7 +267,6 @@ fn create_firmware_info<'a>(
     source_size: u64,
     is_lz4_suffix: bool,
     pit_entry: &'a PitEntry,
-    lz4_supported: bool,
     skip_size_check: bool,
     file_display_name: &str,
 ) -> Option<FirmwareInfo<'a>> {
@@ -287,14 +286,6 @@ fn create_firmware_info<'a>(
     } else {
         None
     };
-
-    if content_size.is_some() && !lz4_supported {
-        print_error!(
-            "Device does not support LZ4 compression, but file \"{}\" is LZ4 compressed.",
-            file_display_name
-        );
-        return None;
-    }
 
     if !skip_size_check {
         let partition_size = pit_entry.partition_size();
@@ -439,7 +430,6 @@ pub(crate) fn action_flash(
             size,
             entry.is_lz4,
             pit_entry,
-            odin_manager.is_lz4_supported(),
             skip_size_check,
             &entry.original_name,
         ) else {
@@ -498,7 +488,6 @@ pub(crate) fn action_flash(
             file_size,
             is_lz4_suffix,
             entry,
-            odin_manager.is_lz4_supported(),
             skip_size_check,
             &part.filename,
         ) else {
