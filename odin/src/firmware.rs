@@ -97,90 +97,74 @@ pub fn verify_md5_footer(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub struct Lz4FrameHeader {
-    pub content_size: u64,
-    pub block_max_size: usize,
-}
+pub fn parse_lz4_content_size<R: Read>(mut reader: R) -> Result<u64, String> {
+    let mut magic_bytes = [0u8; 4];
+    reader
+        .read_exact(&mut magic_bytes)
+        .map_err(|_| "Failed to read magic number")?;
+    let magic = u32::from_le_bytes(magic_bytes);
 
-impl Lz4FrameHeader {
-    pub fn from_read<R: Read>(reader: &mut R) -> Result<Self, String> {
-        let mut magic_bytes = [0u8; 4];
-        reader
-            .read_exact(&mut magic_bytes)
-            .map_err(|_| "Failed to read magic number")?;
-        let magic = u32::from_le_bytes(magic_bytes);
-
-        if magic != 0x184D2204 {
-            // We only support the standard LZ4 frame magic in this context,
-            // not the skippable frames (0x184D2A50 - 0x184D2A5F)
-            return Err(format!("Not a valid LZ4 frame. Magic: 0x{:08X}", magic));
-        }
-
-        let mut flg_byte = [0u8; 1];
-        reader
-            .read_exact(&mut flg_byte)
-            .map_err(|_| "Failed to read FLG byte")?;
-        let flg = flg_byte[0];
-
-        let version = (flg >> 6) & 0x03;
-        if version != 1 {
-            return Err(format!("Unsupported LZ4 version: {}", version));
-        }
-
-        let block_independence = ((flg >> 5) & 0x01) == 1;
-        let block_checksum = ((flg >> 4) & 0x01) == 1;
-        let content_size_flag = ((flg >> 3) & 0x01) == 1;
-        let dict_id_flag = (flg & 0x01) == 1;
-
-        if !content_size_flag {
-            return Err("LZ4 content size must be enabled".to_string());
-        }
-        if block_checksum {
-            return Err("LZ4 block checksum must be disabled".to_string());
-        }
-        if !block_independence {
-            return Err("LZ4 block independence must be enabled".to_string());
-        }
-        if dict_id_flag {
-            return Err("LZ4 dictionary ID must be disabled".to_string());
-        }
-
-        let mut bd_byte = [0u8; 1];
-        reader
-            .read_exact(&mut bd_byte)
-            .map_err(|_| "Failed to read BD byte")?;
-        let bd = bd_byte[0];
-
-        let block_max_size_code = (bd >> 4) & 0x07;
-        let block_max_size = match block_max_size_code {
-            4 => 64 * 1024,
-            5 => 256 * 1024,
-            6 => 1024 * 1024,
-            7 => 4 * 1024 * 1024,
-            _ => {
-                return Err(format!(
-                    "Invalid block max size code: {}",
-                    block_max_size_code
-                ));
-            }
-        };
-
-        let mut content_size_bytes = [0u8; 8];
-        reader
-            .read_exact(&mut content_size_bytes)
-            .map_err(|_| "Failed to read content size")?;
-        let content_size = u64::from_le_bytes(content_size_bytes);
-
-        let mut hc_byte = [0u8; 1];
-        reader
-            .read_exact(&mut hc_byte)
-            .map_err(|_| "Failed to read header checksum")?;
-
-        Ok(Self {
-            content_size,
-            block_max_size,
-        })
+    if magic != 0x184D2204 {
+        // We only support the standard LZ4 frame magic in this context,
+        // not the skippable frames (0x184D2A50 - 0x184D2A5F)
+        return Err(format!("Not a valid LZ4 frame. Magic: 0x{:08X}", magic));
     }
+
+    let mut flg_byte = [0u8; 1];
+    reader
+        .read_exact(&mut flg_byte)
+        .map_err(|_| "Failed to read FLG byte")?;
+    let flg = flg_byte[0];
+
+    let version = (flg >> 6) & 0x03;
+    if version != 1 {
+        return Err(format!("Unsupported LZ4 version: {}", version));
+    }
+
+    let block_independence = ((flg >> 5) & 0x01) == 1;
+    let block_checksum = ((flg >> 4) & 0x01) == 1;
+    let content_size_flag = ((flg >> 3) & 0x01) == 1;
+    let dict_id_flag = (flg & 0x01) == 1;
+
+    if !content_size_flag {
+        return Err("LZ4 content size must be enabled".to_string());
+    }
+    if block_checksum {
+        return Err("LZ4 block checksum must be disabled".to_string());
+    }
+    if !block_independence {
+        return Err("LZ4 block independence must be enabled".to_string());
+    }
+    if dict_id_flag {
+        return Err("LZ4 dictionary ID must be disabled".to_string());
+    }
+
+    let mut bd_byte = [0u8; 1];
+    reader
+        .read_exact(&mut bd_byte)
+        .map_err(|_| "Failed to read BD byte")?;
+    let bd = bd_byte[0];
+
+    let block_max_size_code = (bd >> 4) & 0x07;
+    if block_max_size_code != 6 {
+        return Err(format!(
+            "Only 1MB block size (code 6) is supported. Received code: {}",
+            block_max_size_code
+        ));
+    }
+
+    let mut content_size_bytes = [0u8; 8];
+    reader
+        .read_exact(&mut content_size_bytes)
+        .map_err(|_| "Failed to read content size")?;
+    let content_size = u64::from_le_bytes(content_size_bytes);
+
+    let mut hc_byte = [0u8; 1];
+    reader
+        .read_exact(&mut hc_byte)
+        .map_err(|_| "Failed to read header checksum")?;
+
+    Ok(content_size)
 }
 
 pub struct FirmwareFile<'a> {
@@ -201,16 +185,15 @@ impl<'a> FirmwareFile<'a> {
 pub struct FirmwareLz4File<'a> {
     pub pit_entry: &'a PitEntry,
     pub file: Mmap,
-    pub header: Lz4FrameHeader,
+    pub content_size: u64,
 }
 
 impl<'a> FirmwareLz4File<'a> {
     pub(crate) fn sequences(&self, sequence_max_bytes: usize) -> Lz4SequenceIterator<'_> {
         Lz4SequenceIterator {
             file: &self.file,
-            header: &self.header,
             sequence_max_bytes,
-            remaining_decompressed: self.header.content_size,
+            remaining_decompressed: self.content_size,
             bytes_read: LZ4_HEADER_SIZE,
             finished: false,
         }
@@ -252,7 +235,6 @@ impl<'a> Iterator for SequenceIterator<'a> {
 
 pub(crate) struct Lz4SequenceIterator<'a> {
     file: &'a Mmap,
-    header: &'a Lz4FrameHeader,
     sequence_max_bytes: usize,
     remaining_decompressed: u64,
     bytes_read: usize,
@@ -300,7 +282,7 @@ impl<'a> Iterator for Lz4SequenceIterator<'a> {
 
             self.bytes_read += 4 + data_size;
             end_pos = self.bytes_read;
-            decompressed_size_upper_bound += self.header.block_max_size;
+            decompressed_size_upper_bound += 1024 * 1024; // 1MB
 
             if decompressed_size_upper_bound >= next_decompressed_size {
                 break;

@@ -18,8 +18,8 @@ use crate::PartitionArg;
 use crate::print_error;
 use memmap2::{Mmap, MmapOptions};
 use samloader_odin::{
-    FirmwareFile, FirmwareInfo, FirmwareLz4File, Lz4FrameHeader, OdinManager, create_backend,
-    verify_md5_footer,
+    FirmwareFile, FirmwareInfo, FirmwareLz4File, OdinManager, create_backend,
+    parse_lz4_content_size, verify_md5_footer,
 };
 use samloader_pit::{PitData, PitEntry};
 use std::collections::HashSet;
@@ -212,7 +212,7 @@ fn execute_flash_pipeline(
         .iter()
         .map(|part| match part {
             FirmwareInfo::Normal(f) => f.file.len() as u64,
-            FirmwareInfo::Lz4(f) => f.header.content_size,
+            FirmwareInfo::Lz4(f) => f.content_size,
         })
         .sum();
 
@@ -271,10 +271,10 @@ fn create_firmware_info<'a>(
     skip_size_check: bool,
     file_display_name: &str,
 ) -> Option<FirmwareInfo<'a>> {
-    let mut slice = &mmap[..];
-    let lz4_hdr = if is_lz4_suffix {
-        match Lz4FrameHeader::from_read(&mut slice) {
-            Ok(header) => Some(header),
+    let content_size = if is_lz4_suffix {
+        let cursor = std::io::Cursor::new(&mmap);
+        match parse_lz4_content_size(cursor) {
+            Ok(size) => Some(size),
             Err(e) => {
                 print_error!(
                     "Failed to parse LZ4 header for {}: {}",
@@ -288,7 +288,7 @@ fn create_firmware_info<'a>(
         None
     };
 
-    if lz4_hdr.is_some() && !lz4_supported {
+    if content_size.is_some() && !lz4_supported {
         print_error!(
             "Device does not support LZ4 compression, but file \"{}\" is LZ4 compressed.",
             file_display_name
@@ -298,8 +298,8 @@ fn create_firmware_info<'a>(
 
     if !skip_size_check {
         let partition_size = pit_entry.partition_size();
-        let check_size = if let Some(ref h) = lz4_hdr {
-            h.content_size
+        let check_size = if let Some(cs) = content_size {
+            cs
         } else {
             source_size
         };
@@ -313,11 +313,11 @@ fn create_firmware_info<'a>(
         }
     }
 
-    if let Some(header) = lz4_hdr {
+    if let Some(cs) = content_size {
         Some(FirmwareInfo::Lz4(FirmwareLz4File {
             pit_entry,
             file: mmap,
-            header,
+            content_size: cs,
         }))
     } else {
         Some(FirmwareInfo::Normal(FirmwareFile {
