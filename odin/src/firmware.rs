@@ -173,12 +173,8 @@ pub struct FirmwareFile<'a> {
 }
 
 impl<'a> FirmwareFile<'a> {
-    pub(crate) fn sequences(&self, sequence_max_bytes: usize) -> SequenceIterator<'_> {
-        SequenceIterator {
-            file: &self.file,
-            sequence_max_bytes,
-            bytes_read: 0,
-        }
+    pub(crate) fn sequences(&self, sequence_max_bytes: usize) -> std::slice::Chunks<'_, u8> {
+        self.file.chunks(sequence_max_bytes)
     }
 }
 
@@ -203,34 +199,6 @@ impl<'a> FirmwareLz4File<'a> {
 pub enum FirmwareInfo<'a> {
     Normal(FirmwareFile<'a>),
     Lz4(FirmwareLz4File<'a>),
-}
-
-pub(crate) struct SequenceIterator<'a> {
-    file: &'a Mmap,
-    sequence_max_bytes: usize,
-    bytes_read: u64,
-}
-
-impl<'a> Iterator for SequenceIterator<'a> {
-    type Item = &'a [u8];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let file_size = self.file.len() as u64;
-        if self.bytes_read >= file_size {
-            return None;
-        }
-
-        let remaining = file_size - self.bytes_read;
-        let sequence_byte_count = std::cmp::min(remaining, self.sequence_max_bytes as u64) as usize;
-
-        let start = self.bytes_read as usize;
-        let end = start + sequence_byte_count;
-        let data = &self.file[start..end];
-
-        self.bytes_read += sequence_byte_count as u64;
-
-        Some(data)
-    }
 }
 
 pub(crate) struct Lz4SequenceIterator<'a> {
