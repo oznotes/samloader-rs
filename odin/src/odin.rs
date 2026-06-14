@@ -28,6 +28,7 @@ pub struct OdinManager {
     file_transfer_packet_size: usize,
     file_transfer_sequence_timeout: u32,
     lz4_supported: bool,
+    bootloader_protocol_version: u32,
 }
 
 const FILE_TRANSFER_SEQUENCE_MAX_LENGTH_DEFAULT: usize = 800;
@@ -44,6 +45,7 @@ impl OdinManager {
             file_transfer_packet_size: FILE_TRANSFER_PACKET_SIZE_DEFAULT,
             file_transfer_sequence_timeout: FILE_TRANSFER_SEQUENCE_TIMEOUT_DEFAULT,
             lz4_supported: false,
+            bootloader_protocol_version: 0,
         }
     }
 
@@ -72,16 +74,21 @@ impl OdinManager {
         println!("Beginning session...");
 
         let packet = RequestPacket::begin_session();
-        let device_default_packet_size = self
+        let session_response = self
             .request_and_response(&packet, 3000)
             .map_err(|_| OdinError::BeginSessionFailed)?;
 
-        self.lz4_supported = (device_default_packet_size & 0x8000) != 0;
+        self.bootloader_protocol_version = if session_response == 0 {
+            1
+        } else {
+            session_response >> 16
+        };
 
         println!("\nSome devices may take up to 2 minutes to respond.\nPlease be patient!\n");
         std::thread::sleep(Duration::from_millis(3000));
 
-        if device_default_packet_size != 0 {
+        if self.bootloader_protocol_version >= 2 {
+            self.lz4_supported = (session_response & 0x8000) != 0;
             self.file_transfer_sequence_timeout = 120000;
             self.file_transfer_packet_size = 0x100000;
             self.file_transfer_sequence_max_length = 30;
@@ -193,7 +200,7 @@ impl OdinManager {
         self.receive_packet_with_size::<T>(T::SIZE, timeout)
     }
 
-    pub(crate) fn request_and_response(
+    fn request_and_response(
         &mut self,
         packet: &RequestPacket,
         timeout: i32,
@@ -288,6 +295,10 @@ impl OdinManager {
 
     pub fn is_lz4_supported(&self) -> bool {
         self.lz4_supported
+    }
+
+    pub fn bootloader_protocol_version(&self) -> u32 {
+        self.bootloader_protocol_version
     }
 
     pub fn send_file(&mut self, info: &crate::firmware::FirmwareFile) -> Result<(), OdinError> {

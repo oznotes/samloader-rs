@@ -128,7 +128,7 @@ pub(crate) enum EndSessionRequest {
 impl RequestPacket {
     pub(crate) fn begin_session() -> RequestPacket {
         RequestPacket::Session(SessionRequest::Begin {
-            protocol_version: 0x04,
+            protocol_version: 0x05,
         })
     }
 
