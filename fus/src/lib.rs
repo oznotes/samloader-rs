@@ -24,7 +24,7 @@ pub use aes;
 pub use ecb;
 pub use reqwest;
 
-pub fn fetch_version_info(model: &str, region: &str) -> reqwest::Result<VersionInfo> {
+pub fn fetch_version_xml(model: &str, region: &str) -> reqwest::Result<VersionInfo> {
     let version_url = format!(
         "https://fota-cloud-dn.ospserver.net:443/firmware/{}/{}/version.xml",
         region, model

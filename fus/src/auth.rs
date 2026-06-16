@@ -44,3 +44,41 @@ pub(crate) fn decrypt_nonce(inp: &str) -> String {
     }
     hex
 }
+
+fn generate_client_nonce() -> String {
+    use std::time::SystemTime;
+    let mut seed = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(42) as u64;
+
+    let mut nonce = String::with_capacity(16);
+    let chars = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    for _ in 0..16 {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let idx = (seed >> 32) as usize % chars.len();
+        nonce.push(chars[idx] as char);
+    }
+    nonce
+}
+
+fn to_hex_string(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+pub(crate) fn compute_history_headers(model: &str) -> (String, String) {
+    let client_nonce = generate_client_nonce();
+
+    let auth_str = format!("auth:{}:00000001", client_nonce);
+    let auth_hash = to_hex_string(&fast_md5::digest(auth_str.as_bytes()));
+
+    let interface_str = format!("interface:{}", model.to_uppercase());
+    let interface_hash = to_hex_string(&fast_md5::digest(interface_str.as_bytes()));
+
+    let final_str = format!("{}:FUS:{}", auth_hash, interface_hash);
+    let final_signature = to_hex_string(&fast_md5::digest(final_str.as_bytes()));
+
+    (client_nonce, final_signature)
+}

@@ -51,5 +51,5 @@ This project is licensed under the **Apache License, Version 2.0**.
 - **Heimdall (Firmware Flashing):**
   The core flashing functionality is a derivative work of [~grimler/Heimdall](https://git.sr.ht/~grimler/Heimdall). This implementation began as a precise 1-to-1 conversion of the original C++ project into safe and idiomatic Rust. The original code is licensed under the **MIT License** (preserved in this repository), and copyright headers are preserved in the relevant source files.
 
-- **Firmware Downloading:**
-  The firmware downloading and decryption implementation was inspired from multiple places, including [samloader](https://github.com/samloader/samloader), [samfirm.js](https://github.com/jesec/samfirm.js/), and [Bifrost](https://github.com/zacharee/Bifrost).
+- **Firmware Downloading / FUS:**
+  The firmware downloading and decryption implementation was inspired from multiple places, including [samloader](https://github.com/samloader/samloader), [samfirm.js](https://github.com/jesec/samfirm.js/), [Bifrost](https://github.com/zacharee/Bifrost), and [asgard](https://github.com/ducthoe/asgard).

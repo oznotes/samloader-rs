@@ -19,7 +19,7 @@ mod download;
 mod flash;
 
 use clap::{Arg, ArgAction, Command};
-use samloader_fus::fetch_version_info;
+use samloader_fus::{FusClient, fetch_version_xml};
 
 pub(crate) struct PartitionArg {
     pub(crate) name: Option<String>,
@@ -55,7 +55,8 @@ const OUT_DIR_HELP: &str = "Output directory";
 const OUT_FILE_HELP: &str = "Output file path";
 
 // --- Check Update Command (`check-update`) ---
-const ALL_HELP: &str = "List all available firmware versions, sorted from old to new";
+const ALL_HELP: &str =
+    "List all available firmware versions, with previous and beta sorted from new to old";
 
 // --- Detect Command (`detect`) ---
 const DETECT_ABOUT: &str = "Indicates whether or not a download mode device can be detected";
@@ -385,14 +386,33 @@ fn main() {
             let region = sub_m.get_one::<String>("region").cloned().unwrap();
             let show_all = sub_m.get_one::<bool>("all").copied().unwrap_or(false);
 
-            let info = fetch_version_info(&model, &region).expect("Failed to fetch version info");
+            let info = FusClient::new()
+                .and_then(|client| client.fetch_history(&model, &region))
+                .or_else(|_| fetch_version_xml(&model, &region))
+                .expect("Failed to fetch version info");
 
             if show_all {
-                for v in &info.upgrade {
-                    println!("{}", v);
+                println!("Latest Stable Version:");
+                println!("{}", info.latest);
+
+                if !info.previous.is_empty() {
+                    println!();
+                    println!("Previous Stable Versions (sorted from new to old):");
+                    for v in &info.previous {
+                        println!("{}", v);
+                    }
                 }
+
+                if !info.beta.is_empty() {
+                    println!();
+                    println!("Beta Versions (sorted from new to old):");
+                    for v in &info.beta {
+                        println!("{}", v);
+                    }
+                }
+            } else {
+                println!("{}", info.latest);
             }
-            println!("{}", info.latest);
             0
         }
         Some(("detect", sub_matches)) => {

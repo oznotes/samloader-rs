@@ -16,7 +16,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use memmap2::MmapMut;
 use samloader_fus::aes::cipher::BlockModeDecrypt;
 use samloader_fus::aes::cipher::inout::InOutBuf;
-use samloader_fus::{FusClient, fetch_version_info};
+use samloader_fus::{FusClient, fetch_version_xml};
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Read;
@@ -53,7 +53,9 @@ pub(crate) fn action_download(args: DownloadArgs) {
     let version = match &args.version {
         Some(v) => v.clone(),
         None => {
-            let version_info = fetch_version_info(&args.model, &args.region)
+            let version_info = client
+                .fetch_history(&args.model, &args.region)
+                .or_else(|_| fetch_version_xml(&args.model, &args.region))
                 .expect("Failed to fetch version info");
             version_info.latest
         }
