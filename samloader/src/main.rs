@@ -502,7 +502,9 @@ fn main() {
                 .collect();
             actions::action_verify_md5(&files)
         }
-        Some(("reboot-download", _sub_matches)) => actions::action_reboot_download(verbose),
+        Some(("reboot-download", _sub_matches)) => {
+            actions::action_reboot_download(usb_backend, verbose)
+        }
         _ => unreachable!(),
     };
 

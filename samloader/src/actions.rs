@@ -181,9 +181,9 @@ pub(crate) fn action_print_pit(usb_backend: &str, file: &str, verbose: bool, wai
     }
 }
 
-pub(crate) fn action_reboot_download(_verbose: bool) -> i32 {
+pub(crate) fn action_reboot_download(usb_backend: &str, _verbose: bool) -> i32 {
     println!("Sending serial command...");
-    match samloader_odin::reboot_download() {
+    match samloader_odin::reboot_download(usb_backend) {
         Ok(()) => {
             println!("Done");
             0
