@@ -45,6 +45,9 @@ pub(crate) struct DownloadArgs {
 
     /// Optional: the output file name
     pub(crate) out_file: Option<String>,
+
+    /// Whether to enable verbose output
+    pub(crate) verbose: bool,
 }
 
 pub(crate) fn action_download(args: DownloadArgs) {
@@ -134,12 +137,13 @@ pub(crate) fn action_download(args: DownloadArgs) {
         available: Condvar::new(),
     };
 
+    let verbose = args.verbose;
     thread::scope(|s| {
         let pool = &pool;
         let client = &client;
         let progress = &progress;
         for _ in 0..n_workers {
-            s.spawn(move || run_worker(pool, client, progress));
+            s.spawn(move || run_worker(pool, client, progress, verbose));
 
             // Stagger connection setup to avoid hammering the server
             thread::sleep(Duration::from_millis(100));
@@ -232,7 +236,7 @@ const MAX_DEAD_STALLS: u32 = 4;
 /// tail back to the pool and — as long as it is not the only connection left —
 /// exits. This is the dynamic decrease in thread count: connections that the
 /// server has effectively cut off stop competing, and the rest carry on.
-fn run_worker(pool: &Pool<'_>, client: &FusClient, progress: &ProgressBar) {
+fn run_worker(pool: &Pool<'_>, client: &FusClient, progress: &ProgressBar, verbose: bool) {
     // For the final surviving connection only: how many times in a row the whole
     // download failed to advance. Lets us give up on a truly dead server instead
     // of spinning forever once we can no longer shed connections.
@@ -258,7 +262,14 @@ fn run_worker(pool: &Pool<'_>, client: &FusClient, progress: &ProgressBar) {
             }
         };
 
-        let outcome = download_chunk(client, &mut chunk.buf[..], chunk.start, chunk.end, progress);
+        let outcome = download_chunk(
+            client,
+            &mut chunk.buf[..],
+            chunk.start,
+            chunk.end,
+            progress,
+            verbose,
+        );
 
         match outcome {
             ChunkOutcome::Done => {
@@ -295,9 +306,12 @@ fn run_worker(pool: &Pool<'_>, client: &FusClient, progress: &ProgressBar) {
                     let remaining = state.live;
                     pool.available.notify_all();
                     drop(state);
-                    progress.println(format!(
-                        "Connection throttled at offset {stall_off}; reducing to {remaining} connection(s)"
-                    ));
+                    if verbose {
+                        progress.println(format!(
+                            "Connection throttled at offset {stall_off}; \
+                             reducing to {remaining} connection(s)"
+                        ));
+                    }
                     return;
                 }
 
@@ -344,6 +358,7 @@ fn download_chunk(
     start: u64,
     end: Option<u64>,
     progress: &ProgressBar,
+    verbose: bool,
 ) -> ChunkOutcome {
     // ECB keeps no state between blocks, so one decryptor is reused across every
     // (re)connection.
@@ -359,10 +374,12 @@ fn download_chunk(
                 if retries > MAX_STALL_RETRIES {
                     return ChunkOutcome::Stalled { decrypted: dec_pos };
                 }
-                progress.println(format!(
-                    "Request error ({e}); retry {retries}/{MAX_STALL_RETRIES} at offset {}",
-                    start + dec_pos as u64
-                ));
+                if verbose {
+                    progress.println(format!(
+                        "Request error ({e}); retry {retries}/{MAX_STALL_RETRIES} at offset {}",
+                        start + dec_pos as u64
+                    ));
+                }
                 thread::sleep(backoff(retries));
                 continue;
             }
@@ -409,10 +426,13 @@ fn download_chunk(
         if retries > MAX_STALL_RETRIES {
             return ChunkOutcome::Stalled { decrypted: dec_pos };
         }
-        progress.println(format!(
-            "Download error ({stall}); retry {retries}/{MAX_STALL_RETRIES}, resuming at offset {}",
-            start + dec_pos as u64
-        ));
+        if verbose {
+            progress.println(format!(
+                "Download error ({stall}); retry {retries}/{MAX_STALL_RETRIES}, \
+                 resuming at offset {}",
+                start + dec_pos as u64
+            ));
+        }
         thread::sleep(backoff(retries));
     }
 }

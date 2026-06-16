@@ -377,6 +377,7 @@ fn main() {
                 threads,
                 out_dir,
                 out_file,
+                verbose,
             };
             download::action_download(args);
             0
