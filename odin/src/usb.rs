@@ -213,12 +213,7 @@ impl UsbBackend for RusbBackend {
             OdinError::SerialError(format!("Failed to create libusb context: {}", e))
         })?;
 
-        if wait {
-            println!("Waiting for device...");
-        } else {
-            println!("Detecting device...");
-        }
-
+        let mut print_wait = false;
         loop {
             if let Ok(devices) = context.devices() {
                 for device in devices.iter() {
@@ -230,7 +225,9 @@ impl UsbBackend for RusbBackend {
                 }
             }
 
-            if wait {
+            if wait && !print_wait {
+                println!("Waiting for device...");
+                print_wait = true;
                 std::thread::sleep(Duration::from_secs(1));
             } else {
                 break;
@@ -370,12 +367,7 @@ impl UsbBackend for SerialBackend {
     where
         F: FnMut(u16, u16) -> bool,
     {
-        if wait {
-            println!("Waiting for device...");
-        } else {
-            println!("Detecting device...");
-        }
-
+        let mut print_wait = false;
         loop {
             if let Ok(ports) = serialport::available_ports() {
                 for port in ports {
@@ -387,7 +379,9 @@ impl UsbBackend for SerialBackend {
                 }
             }
 
-            if wait {
+            if wait && !print_wait {
+                println!("Waiting for device...");
+                print_wait = true;
                 std::thread::sleep(Duration::from_secs(1));
             } else {
                 break;
