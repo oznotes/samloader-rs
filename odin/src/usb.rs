@@ -19,9 +19,19 @@ use std::io::{Read, Write};
 use std::time::Duration;
 
 macro_rules! print_warning {
-    ($($arg:tt)*) => {
-        eprint!("WARNING: ");
-        eprintln!($($arg)*);
+    ($verbose:expr, $($arg:tt)*) => {
+        if $verbose {
+            eprint!("WARNING: ");
+            eprintln!($($arg)*);
+        }
+    };
+}
+
+macro_rules! print_verbose {
+    ($verbose:expr, $($arg:tt)*) => {
+        if $verbose {
+            eprintln!($($arg)*);
+        }
     };
 }
 
@@ -171,13 +181,13 @@ impl UsbBackend for RusbBackend {
             return Err(OdinError::InterfaceConfigurationNotFound);
         }
 
-        println!("Claiming interface...");
+        print_verbose!(verbose, "Claiming interface...");
         if handle.claim_interface(interface_index as u8).is_err() {
             #[cfg(target_os = "linux")]
             {
-                println!("Attempt failed. Detaching driver...");
+                print_verbose!(verbose, "Attempt failed. Detaching driver...");
                 let _ = handle.detach_kernel_driver(interface_index as u8);
-                println!("Claiming interface again...");
+                print_verbose!(verbose, "Claiming interface again...");
                 if handle.claim_interface(interface_index as u8).is_err() {
                     return Err(OdinError::InterfaceClaimFailed);
                 }
@@ -189,7 +199,7 @@ impl UsbBackend for RusbBackend {
         }
 
         if alt_setting_index != 0 {
-            println!("Setting up interface...");
+            print_verbose!(verbose, "Setting up interface...");
             handle
                 .set_alternate_setting(interface_index as u8, alt_setting_index as u8)
                 .map_err(|_| OdinError::InterfaceSetupFailed)?;
@@ -241,7 +251,7 @@ impl UsbBackend for RusbBackend {
 impl UsbTransfer for RusbBackend {
     fn reset(&mut self) {
         if let Err(e) = self.handle.reset() {
-            print_warning!("Failed to reset device! Result: {}", e);
+            print_warning!(self.verbose, "Failed to reset device! Result: {}", e);
         }
     }
 
@@ -249,9 +259,7 @@ impl UsbTransfer for RusbBackend {
         let max_attempts = if retry { 6 } else { 1 };
         for attempt in 0..max_attempts {
             if attempt > 0 {
-                if self.verbose {
-                    eprintln!(" Retrying...");
-                }
+                print_verbose!(self.verbose, " Retrying...");
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
 
@@ -267,6 +275,7 @@ impl UsbTransfer for RusbBackend {
 
             if retry {
                 print_warning!(
+                    self.verbose,
                     "libusb error {} whilst sending bulk transfer.",
                     result.as_ref().unwrap_err()
                 );
@@ -281,9 +290,7 @@ impl UsbTransfer for RusbBackend {
 
         for attempt in 0..max_attempts {
             if attempt > 0 {
-                if self.verbose {
-                    eprintln!(" Retrying...");
-                }
+                print_verbose!(self.verbose, " Retrying...");
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
 
@@ -299,6 +306,7 @@ impl UsbTransfer for RusbBackend {
 
             if retry {
                 print_warning!(
+                    self.verbose,
                     "libusb error {} whilst receiving bulk transfer.",
                     result.as_ref().unwrap_err()
                 );
@@ -310,7 +318,7 @@ impl UsbTransfer for RusbBackend {
 
 impl Drop for RusbBackend {
     fn drop(&mut self) {
-        println!("Releasing device interface...");
+        print_verbose!(self.verbose, "Releasing device interface...");
         let _ = self.handle.release_interface(self.interface_index as u8);
 
         #[cfg(target_os = "linux")]
@@ -395,7 +403,7 @@ impl UsbBackend for SerialBackend {
 impl UsbTransfer for SerialBackend {
     fn reset(&mut self) {
         if let Err(e) = self.port.clear(serialport::ClearBuffer::All) {
-            print_warning!("Failed to reset device! Result: {}", e);
+            print_warning!(self.verbose, "Failed to reset device! Result: {}", e);
         }
     }
 
@@ -403,15 +411,13 @@ impl UsbTransfer for SerialBackend {
         let max_attempts = if retry { 6 } else { 1 };
         for attempt in 0..max_attempts {
             if attempt > 0 {
-                if self.verbose {
-                    eprintln!(" Retrying...");
-                }
+                print_verbose!(self.verbose, " Retrying...");
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
 
             if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
                 if retry {
-                    print_warning!("Failed to set serial port timeout: {}", e);
+                    print_warning!(self.verbose, "Failed to set serial port timeout: {}", e);
                 }
                 continue;
             }
@@ -423,7 +429,7 @@ impl UsbTransfer for SerialBackend {
                 }
                 Err(e) => {
                     if retry {
-                        print_warning!("Serial error whilst sending transfer: {}", e);
+                        print_warning!(self.verbose, "Serial error whilst sending transfer: {}", e);
                     }
                 }
             }
@@ -437,15 +443,13 @@ impl UsbTransfer for SerialBackend {
 
         for attempt in 0..max_attempts {
             if attempt > 0 {
-                if self.verbose {
-                    eprintln!(" Retrying...");
-                }
+                print_verbose!(self.verbose, " Retrying...");
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
 
             if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
                 if retry {
-                    print_warning!("Failed to set serial port timeout: {}", e);
+                    print_warning!(self.verbose, "Failed to set serial port timeout: {}", e);
                 }
                 continue;
             }
@@ -459,7 +463,11 @@ impl UsbTransfer for SerialBackend {
                 }
                 Err(e) => {
                     if retry {
-                        print_warning!("Serial error whilst receiving transfer: {}", e);
+                        print_warning!(
+                            self.verbose,
+                            "Serial error whilst receiving transfer: {}",
+                            e
+                        );
                     }
                 }
             }
