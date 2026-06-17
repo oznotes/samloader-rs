@@ -408,30 +408,60 @@ impl UsbTransfer for SerialBackend {
     }
 
     fn send_data(&mut self, data: &[u8], timeout: i32, retry: bool) -> bool {
+        if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
+            print_warning!(self.verbose, "Failed to set serial port timeout: {}", e);
+        }
+
+        let mut written = 0;
         let max_attempts = if retry { 6 } else { 1 };
+
         for attempt in 0..max_attempts {
             if attempt > 0 {
-                print_verbose!(self.verbose, " Retrying...");
+                print_verbose!(
+                    self.verbose,
+                    " Retrying (written {}/{})...",
+                    written,
+                    data.len()
+                );
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
 
-            if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
-                if retry {
-                    print_warning!(self.verbose, "Failed to set serial port timeout: {}", e);
-                }
-                continue;
-            }
-
-            match self.port.write_all(data) {
-                Ok(_) => {
-                    let _ = self.port.flush();
-                    return true;
-                }
-                Err(e) => {
-                    if retry {
-                        print_warning!(self.verbose, "Serial error whilst sending transfer: {}", e);
+            while written < data.len() {
+                match self.port.write(&data[written..]) {
+                    Ok(0) => {
+                        if retry {
+                            print_warning!(self.verbose, "Serial write returned 0 bytes written");
+                        }
+                        break;
+                    }
+                    Ok(n) => {
+                        written += n;
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                        continue;
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                        if retry {
+                            print_warning!(self.verbose, "Serial write timed out: {}", e);
+                        }
+                        break;
+                    }
+                    Err(e) => {
+                        if retry {
+                            print_warning!(
+                                self.verbose,
+                                "Serial error whilst sending transfer: {}",
+                                e
+                            );
+                        }
+                        break;
                     }
                 }
+            }
+
+            if written == data.len() {
+                let _ = self.port.flush();
+                return true;
             }
         }
 
@@ -439,19 +469,16 @@ impl UsbTransfer for SerialBackend {
     }
 
     fn receive_data(&mut self, data: &mut [u8], timeout: i32, retry: bool) -> i32 {
+        if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
+            print_warning!(self.verbose, "Failed to set serial port timeout: {}", e);
+        }
+
         let max_attempts = if retry { 6 } else { 1 };
 
         for attempt in 0..max_attempts {
             if attempt > 0 {
                 print_verbose!(self.verbose, " Retrying...");
                 std::thread::sleep(Duration::from_millis(250 * attempt));
-            }
-
-            if let Err(e) = self.port.set_timeout(Duration::from_millis(timeout as u64)) {
-                if retry {
-                    print_warning!(self.verbose, "Failed to set serial port timeout: {}", e);
-                }
-                continue;
             }
 
             match self.port.read(data) {
