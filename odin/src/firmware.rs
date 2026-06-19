@@ -16,31 +16,28 @@ use fast_md5::Md5;
 use lz4_flex::frame::FrameDecoder;
 use memmap2::Mmap;
 use samloader_pit::PitEntry;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom};
 
 // This is asserted by Lz4FrameHeader so the header size is always 15
 const LZ4_HEADER_SIZE: usize = 15;
 
-pub fn verify_md5_footer<R: Read + Seek>(mut reader: R) -> Result<(), String> {
-    let file_size = reader
-        .seek(SeekFrom::End(0))
-        .map_err(|e| format!("Failed to seek to end: {}", e))?;
+pub fn verify_md5_footer<R: Read + Seek>(mut reader: R) -> io::Result<()> {
+    let file_size = reader.seek(SeekFrom::End(0))?;
 
     if file_size < 34 {
-        return Err("File is too small to contain a valid MD5 footer".to_string());
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "File is too small to contain a valid MD5 footer",
+        ));
     }
 
     // Read the last 512 bytes of the file. Since the TAR file must end with at least
     // two blocks of zeroes, the last null byte (0x00) marks the exact boundary
     // between the TAR payload and the appended plain-text MD5 footer.
     let seek_pos = file_size.saturating_sub(512);
-    reader
-        .seek(SeekFrom::Start(seek_pos))
-        .map_err(|e| e.to_string())?;
+    reader.seek(SeekFrom::Start(seek_pos))?;
     let mut last_bytes = vec![0u8; (file_size - seek_pos) as usize];
-    reader
-        .read_exact(&mut last_bytes)
-        .map_err(|e| e.to_string())?;
+    reader.read_exact(&mut last_bytes)?;
 
     // Find the last null byte (0x00)
     let mut last_null_idx = None;
@@ -52,7 +49,10 @@ pub fn verify_md5_footer<R: Read + Seek>(mut reader: R) -> Result<(), String> {
     }
 
     let Some(null_idx) = last_null_idx else {
-        return Err("Could not find a valid null separator for the MD5 footer".to_string());
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Could not find a valid null separator for the MD5 footer",
+        ));
     };
 
     let footer_start = null_idx + 1;
@@ -61,7 +61,10 @@ pub fn verify_md5_footer<R: Read + Seek>(mut reader: R) -> Result<(), String> {
     let footer_line = footer_str.lines().last().unwrap_or_default();
 
     if footer_line.len() < 32 {
-        return Err("Could not find a valid MD5 checksum at the end of the file".to_string());
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Could not find a valid MD5 checksum at the end of the file",
+        ));
     }
 
     let expected_hex = &footer_line[..32];
@@ -69,30 +72,31 @@ pub fn verify_md5_footer<R: Read + Seek>(mut reader: R) -> Result<(), String> {
     for i in 0..16 {
         let hex_byte = &expected_hex[i * 2..i * 2 + 2];
         expected_bytes[i] = u8::from_str_radix(hex_byte, 16)
-            .map_err(|_| "Invalid hex character in MD5 checksum")?;
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     }
 
     // The payload size is the exact position up to the MD5 footer text
     let payload_size = file_size - footer_line.len() as u64 - 1;
 
     // Reset file pointer and compute MD5 over the payload only
-    reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+    reader.seek(SeekFrom::Start(0))?;
     let mut hasher = Md5::new();
     let mut buffer = [0u8; 128 * 1024];
     let mut remaining = payload_size;
 
     while remaining > 0 {
         let to_read = std::cmp::min(remaining, buffer.len() as u64) as usize;
-        reader
-            .read_exact(&mut buffer[..to_read])
-            .map_err(|e| e.to_string())?;
+        reader.read_exact(&mut buffer[..to_read])?;
         hasher.update(&buffer[..to_read]);
         remaining -= to_read as u64;
     }
 
     let calculated_digest = hasher.finalize();
     if calculated_digest != expected_bytes {
-        return Err("MD5 verification failed! File is corrupted or modified.".to_string());
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "MD5 verification failed! File is corrupted or modified.",
+        ));
     }
 
     Ok(())
