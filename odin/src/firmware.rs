@@ -16,18 +16,15 @@ use fast_md5::Md5;
 use lz4_flex::frame::FrameDecoder;
 use memmap2::Mmap;
 use samloader_pit::PitEntry;
-use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 
 // This is asserted by Lz4FrameHeader so the header size is always 15
 const LZ4_HEADER_SIZE: usize = 15;
 
-pub fn verify_md5_footer(path: &str) -> Result<(), String> {
-    let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
-    let metadata = file
-        .metadata()
-        .map_err(|e| format!("Failed to read metadata: {}", e))?;
-    let file_size = metadata.len();
+pub fn verify_md5_footer<R: Read + Seek>(mut reader: R) -> Result<(), String> {
+    let file_size = reader
+        .seek(SeekFrom::End(0))
+        .map_err(|e| format!("Failed to seek to end: {}", e))?;
 
     if file_size < 34 {
         return Err("File is too small to contain a valid MD5 footer".to_string());
@@ -37,10 +34,12 @@ pub fn verify_md5_footer(path: &str) -> Result<(), String> {
     // two blocks of zeroes, the last null byte (0x00) marks the exact boundary
     // between the TAR payload and the appended plain-text MD5 footer.
     let seek_pos = file_size.saturating_sub(512);
-    file.seek(SeekFrom::Start(seek_pos))
+    reader
+        .seek(SeekFrom::Start(seek_pos))
         .map_err(|e| e.to_string())?;
     let mut last_bytes = vec![0u8; (file_size - seek_pos) as usize];
-    file.read_exact(&mut last_bytes)
+    reader
+        .read_exact(&mut last_bytes)
         .map_err(|e| e.to_string())?;
 
     // Find the last null byte (0x00)
@@ -77,14 +76,15 @@ pub fn verify_md5_footer(path: &str) -> Result<(), String> {
     let payload_size = file_size - footer_line.len() as u64 - 1;
 
     // Reset file pointer and compute MD5 over the payload only
-    file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+    reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
     let mut hasher = Md5::new();
     let mut buffer = [0u8; 128 * 1024];
     let mut remaining = payload_size;
 
     while remaining > 0 {
         let to_read = std::cmp::min(remaining, buffer.len() as u64) as usize;
-        file.read_exact(&mut buffer[..to_read])
+        reader
+            .read_exact(&mut buffer[..to_read])
             .map_err(|e| e.to_string())?;
         hasher.update(&buffer[..to_read]);
         remaining -= to_read as u64;

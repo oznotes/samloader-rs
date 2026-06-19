@@ -24,7 +24,7 @@ use samloader_odin::{
 use samloader_pit::{PitData, PitEntry};
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use tar::Archive;
 
@@ -53,13 +53,34 @@ fn scan_tar_packages(
     packages: &[String],
     skip_md5: bool,
 ) -> Result<(Vec<IndexedEntry>, Option<Vec<u8>>), i32> {
+    // Open all packages into a File first
+    let mut opened_packages = Vec::new();
+    for pkg in packages {
+        let file = match File::open(pkg) {
+            Ok(f) => f,
+            Err(_) => {
+                print_error!("Failed to open package file \"{}\"", pkg);
+                return Err(1);
+            }
+        };
+        opened_packages.push((pkg, file));
+    }
+
     // MD5 verification of .tar.md5 packages
     if !skip_md5 {
-        for pkg in packages {
+        for (pkg, file) in &mut opened_packages {
             if pkg.to_lowercase().ends_with(".md5") {
                 println!("Verifying MD5 checksum for {}...", pkg);
-                if let Err(e) = verify_md5_footer(pkg) {
+                if let Err(e) = verify_md5_footer(&*file) {
                     print_error!("{}", e);
+                    return Err(1);
+                }
+                if let Err(e) = file.seek(SeekFrom::Start(0)) {
+                    print_error!(
+                        "Failed to seek package file \"{}\" back to start: {}",
+                        pkg,
+                        e
+                    );
                     return Err(1);
                 }
                 println!("MD5 verification successful!\n");
@@ -71,16 +92,8 @@ fn scan_tar_packages(
     let mut archives_download_lists: Vec<HashSet<String>> = Vec::new();
     let mut all_packages_entries: Vec<Vec<IndexedEntry>> = Vec::new();
 
-    for pkg in packages {
-        let file = match File::open(pkg) {
-            Ok(f) => f,
-            Err(_) => {
-                print_error!("Failed to open package file \"{}\"", pkg);
-                return Err(1);
-            }
-        };
-
-        let mut archive = Archive::new(&file);
+    for (pkg, file) in &opened_packages {
+        let mut archive = Archive::new(file);
         let entries = match archive.entries() {
             Ok(e) => e,
             Err(e) => {
@@ -133,7 +146,7 @@ fn scan_tar_packages(
                     MmapOptions::new()
                         .offset(offset)
                         .len(size as usize)
-                        .map(&file)
+                        .map(file)
                 } {
                     Ok(m) => m,
                     Err(_) => {

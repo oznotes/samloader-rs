@@ -193,14 +193,22 @@ pub(crate) fn action_reboot_download(usb_backend: &str, _verbose: bool) -> i32 {
 
 pub(crate) fn action_verify_md5(files: &[String]) -> i32 {
     let mut success = true;
-    for file in files {
-        println!("Verifying MD5 checksum for {}...", file);
-        match verify_md5_footer(file) {
+    for file_path in files {
+        println!("Verifying MD5 checksum for {}...", file_path);
+        let file = match File::open(file_path) {
+            Ok(f) => f,
+            Err(e) => {
+                print_error!("Failed to open file \"{}\": {}", file_path, e);
+                success = false;
+                continue;
+            }
+        };
+        match verify_md5_footer(&file) {
             Ok(()) => {
                 println!("MD5 verification successful!\n");
             }
             Err(e) => {
-                print_error!("MD5 verification failed for \"{}\": {}", file, e);
+                print_error!("MD5 verification failed for \"{}\": {}", file_path, e);
                 success = false;
             }
         }
