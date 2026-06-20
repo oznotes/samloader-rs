@@ -21,6 +21,7 @@ use std::io::{self, Read, Seek, SeekFrom};
 // This is asserted by Lz4FrameHeader so the header size is always 15
 const LZ4_HEADER_SIZE: usize = 15;
 
+/// Verifies the trailing MD5 checksum appended to `.tar.md5` package files.
 pub fn verify_md5_footer<R: Read + Seek>(mut reader: R) -> io::Result<()> {
     let file_size = reader.seek(SeekFrom::End(0))?;
 
@@ -102,12 +103,16 @@ pub fn verify_md5_footer<R: Read + Seek>(mut reader: R) -> io::Result<()> {
     Ok(())
 }
 
+/// Header containing metadata parsed from an LZ4 frame.
 pub struct Lz4FrameHeader {
+    /// Total size of the decompressed content in bytes.
     pub content_size: u64,
+    /// Maximum size of a block in bytes.
     pub block_max_size: u64,
 }
 
 impl Lz4FrameHeader {
+    /// Parses the LZ4 frame header from a reader.
     pub fn parse<R: Read>(mut reader: R) -> Result<Self, String> {
         let mut magic_bytes = [0u8; 4];
         reader
@@ -188,8 +193,11 @@ impl Lz4FrameHeader {
     }
 }
 
+/// An uncompressed firmware file mapped in memory.
 pub struct FirmwareFile<'a> {
+    /// PIT partition entry associated with this file.
     pub pit_entry: &'a PitEntry,
+    /// Memory-mapped file content payload.
     pub file: Mmap,
 }
 
@@ -199,9 +207,13 @@ impl<'a> FirmwareFile<'a> {
     }
 }
 
+/// An LZ4-compressed firmware file mapped in memory.
 pub struct FirmwareLz4File<'a> {
+    /// PIT partition entry associated with this file.
     pub pit_entry: &'a PitEntry,
+    /// Memory-mapped file content payload.
     pub file: Mmap,
+    /// Metadata header of the LZ4 frame.
     pub header: Lz4FrameHeader,
 }
 
@@ -227,8 +239,11 @@ impl<'a> FirmwareLz4File<'a> {
     }
 }
 
+/// Enum wrapping a firmware file payload variant.
 pub enum FirmwareInfo<'a> {
+    /// Uncompressed normal firmware file payload.
     Normal(FirmwareFile<'a>),
+    /// LZ4-compressed firmware file payload.
     Lz4(FirmwareLz4File<'a>),
 }
 
@@ -294,6 +309,7 @@ impl<'a> Iterator for Lz4SequenceIterator<'a> {
     }
 }
 
+/// Iterator that produces decompressed byte chunks from an LZ4 stream.
 pub struct Lz4DecompressedSequenceIterator<'a> {
     decoder: FrameDecoder<&'a [u8]>,
     sequence_max_bytes: usize,

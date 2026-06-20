@@ -198,14 +198,22 @@ fn get_xml_node_data(node: Node) -> HashMap<String, String> {
     kv
 }
 
+/// Detailed information about a firmware binary package.
 #[derive(Default, Clone)]
 pub struct BinaryInform {
+    /// The firmware build version identifier (e.g., PDA/CSC/PHONE/PHONE).
     pub version: String,
+    /// The actual name of the firmware file on the server.
     pub filename: String,
+    /// The relative URL path on the server to download the firmware.
     pub path: String,
+    /// The size of the firmware binary package in bytes.
     pub size: u64,
+    /// The 128-bit key used for AES-128 decryption.
     pub key: Vec<u8>,
+    /// The device model type classification string.
     pub model_type: String,
+    /// The local CSC or sales region code.
     pub region: String,
 }
 

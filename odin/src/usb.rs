@@ -48,25 +48,35 @@ const SUPPORTED_DEVICES: &[(u16, u16)] = &[
 
 const USB_CLASS_CDC_DATA: u8 = 0x0A;
 
+/// Trait representing a duplex data transport layer for USB or serial communication.
 pub trait UsbTransfer {
+    /// Resets the transport connection state and buffers.
     fn reset(&mut self);
+    /// Sends a buffer of data across the transport with a timeout.
     fn send_data(&mut self, data: &[u8], timeout: i32, retry: bool) -> bool;
+    /// Receives data from the transport into a buffer, returning the number of bytes read.
     fn receive_data(&mut self, data: &mut [u8], timeout: i32, retry: bool) -> i32;
 }
 
+/// Trait representing a backend factory and device locator for USB or serial transports.
 pub trait UsbBackend: Sized + UsbTransfer {
+    /// The associated device type identifier.
     type UsbDevice;
 
+    /// Instantiates a new backend session wrapper for a given device.
     fn new(device: Self::UsbDevice, verbose: bool) -> Result<Self, OdinError>;
+    /// Searches for a matching connected device based on a predicate.
     fn find_device<F>(wait: bool, predicate: F) -> Result<Self::UsbDevice, OdinError>
     where
         F: FnMut(u16, u16) -> bool;
 
+    /// Searches for a connected device in Download Mode.
     fn find_download_device(wait: bool) -> Result<Self::UsbDevice, OdinError> {
         Self::find_device(wait, |vid, pid| SUPPORTED_DEVICES.contains(&(vid, pid)))
     }
 }
 
+/// USB communication backend using `libusb` / `rusb`.
 pub struct RusbBackend {
     verbose: bool,
     handle: DeviceHandle<Context>,
@@ -328,6 +338,7 @@ impl Drop for RusbBackend {
     }
 }
 
+/// Serial VCOM communication backend using virtual serial ports.
 pub struct SerialBackend {
     verbose: bool,
     port: Box<dyn serialport::SerialPort>,
@@ -503,6 +514,7 @@ impl UsbTransfer for SerialBackend {
     }
 }
 
+/// Creates and initializes the requested USB/VCOM communication backend interface.
 pub fn create_backend(
     usb_backend: &str,
     verbose: bool,

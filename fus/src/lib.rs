@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Crate for interacting with Samsung Firmware Update Server (FUS) to query
+//! and download device firmware binaries.
+
+#![deny(missing_docs)]
+
 mod auth;
 mod fusclient;
 mod xml;
@@ -24,6 +29,7 @@ pub use aes;
 pub use ecb;
 pub use reqwest;
 
+/// Queries and fetches the standard firmware `version.xml` document for the specified device model and region.
 pub fn fetch_version_xml(model: &str, region: &str) -> reqwest::Result<VersionInfo> {
     let version_url = format!(
         "https://fota-cloud-dn.ospserver.net:443/firmware/{}/{}/version.xml",

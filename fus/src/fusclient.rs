@@ -20,6 +20,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use xml::{BinaryInform, VersionInfo};
 
+/// Block decryption cipher alias using AES-128 in ECB mode for FUS stream processing.
 pub type Aes128EcbDec = ecb::Decryptor<aes::Aes128>;
 
 /// Authentication token state. The download GET signs every request with
@@ -33,6 +34,8 @@ struct AuthState {
     encnonce: String,
 }
 
+/// Client coordinating API communication, security authentication, and file downloading
+/// with the Samsung Firmware Update Server (FUS).
 pub struct FusClient {
     client: Client,
     auth_state: Mutex<AuthState>,
@@ -40,10 +43,12 @@ pub struct FusClient {
     /// serializes reauth: a token expiry observed by many download threads at
     /// once triggers a single refresh, and the rest reuse its result.
     reauth_gen: Mutex<u64>,
+    /// The parsed and resolved binary download metadata for the active firmware session.
     pub info: BinaryInform,
 }
 
 impl FusClient {
+    /// Creates a new `FusClient` and initiates the standard FUS handshake to generate a session nonce.
     pub fn new() -> reqwest::Result<Self> {
         let client = Client::builder()
             .cookie_store(true)
@@ -69,6 +74,7 @@ impl FusClient {
         Ok(fus)
     }
 
+    /// Queries the server for firmware binary metadata matching the requested model, region, and version.
     pub fn fetch_binary_info(&mut self, model: &str, region: &str, version: &str) {
         let mut parts: Vec<&str> = version.split('/').collect();
         if parts.len() == 3 {
@@ -149,6 +155,7 @@ impl FusClient {
         Ok(resp)
     }
 
+    /// Fetches the historical list of released firmware versions for the target model and region.
     pub fn fetch_history(&self, model: &str, region: &str) -> reqwest::Result<VersionInfo> {
         let req_xml = xml::history_req_xml(model, region);
         let resp = self.make_req(
@@ -160,6 +167,7 @@ impl FusClient {
         Ok(xml::parse_history_xml(&xml).expect("Failed to parse history.xml"))
     }
 
+    /// Requests a download authorization ticket from FUS for the currently selected firmware file.
     pub fn init_download(&self) -> reqwest::Result<()> {
         let nonce = self.auth_state.lock().unwrap().nonce.clone();
         let init_xml = xml::binary_init_req_xml(
@@ -177,6 +185,7 @@ impl FusClient {
         Ok(())
     }
 
+    /// Fetches a specific byte range or chunk of the firmware binary package, automatically handling re-authentication as needed.
     pub fn download_file(&self, start: Option<u64>, end: Option<u64>) -> reqwest::Result<Response> {
         // Capture the token generation backing this request. If the request is
         // rejected as unauthorized, this lets the refresh tell whether another
@@ -253,6 +262,7 @@ impl FusClient {
         }
     }
 
+    /// Instantiates and returns an AES-128-ECB decryptor initialized with the unique session decryption key.
     pub fn get_decryptor(&self) -> Aes128EcbDec {
         Aes128EcbDec::new_from_slice(self.info.key.as_slice()).unwrap()
     }

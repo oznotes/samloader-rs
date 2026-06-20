@@ -20,6 +20,7 @@ use crate::usb::UsbTransfer;
 use samloader_pit::{BinaryType, PitEntry};
 use std::time::Duration;
 
+/// Driver and session manager coordinating the Samsung Odin/Loke flashing protocol.
 pub struct OdinManager {
     verbose: bool,
     usb: Box<dyn UsbTransfer>,
@@ -32,7 +33,7 @@ pub struct OdinManager {
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
-pub enum EmptySendKind {
+enum EmptySendKind {
     None,
     Before,
     After,
@@ -44,6 +45,7 @@ const FILE_TRANSFER_PACKET_SIZE_DEFAULT: usize = 0x20000;
 const FILE_TRANSFER_SEQUENCE_TIMEOUT_DEFAULT: u32 = 30000;
 
 impl OdinManager {
+    /// Creates a new `OdinManager` instance with a given transport and verbosity.
     pub fn new(usb: Box<dyn UsbTransfer>, verbose: bool) -> Self {
         Self {
             verbose,
@@ -57,6 +59,7 @@ impl OdinManager {
         }
     }
 
+    /// Resets the connection transport and performs the "ODIN" / "LOKE" protocol handshake.
     pub fn init(&mut self) -> Result<(), OdinError> {
         println!("Initializing protocol...");
 
@@ -80,6 +83,7 @@ impl OdinManager {
         }
     }
 
+    /// Begins an active flashing session, negotiating features such as packet size and LZ4 support.
     pub fn begin_session(&mut self) -> Result<(), OdinError> {
         println!("Beginning session...");
 
@@ -117,6 +121,7 @@ impl OdinManager {
         Ok(())
     }
 
+    /// Ends the active flashing session on the device.
     pub fn end_session(&mut self) -> Result<(), OdinError> {
         println!("Ending session...");
 
@@ -127,6 +132,7 @@ impl OdinManager {
         Ok(())
     }
 
+    /// Reboots the device normally out of Download Mode.
     pub fn reboot_device(&mut self) -> Result<(), OdinError> {
         println!("Rebooting device...");
 
@@ -137,7 +143,8 @@ impl OdinManager {
         Ok(())
     }
 
-    fn send_string(&mut self, s: &str, timeout: i32) -> Result<(), OdinError> {
+    /// Sends a raw string message over the transport connection.
+    pub fn send_string(&mut self, s: &str, timeout: i32) -> Result<(), OdinError> {
         if self.verbose {
             eprintln!("Sending string: {:?}", s);
         }
@@ -152,7 +159,8 @@ impl OdinManager {
         self.usb.receive_data(&mut buffer, timeout, false);
     }
 
-    fn receive_string(&mut self, timeout: i32) -> Result<String, OdinError> {
+    /// Receives a raw string message from the transport connection.
+    pub fn receive_string(&mut self, timeout: i32) -> Result<String, OdinError> {
         let mut buffer = [0u8; 1024];
         let received_size = self.usb.receive_data(&mut buffer, timeout, true);
 
@@ -243,6 +251,7 @@ impl OdinManager {
         Ok(response.value)
     }
 
+    /// Flashes/uploads raw PIT data to the device.
     pub fn send_pit_data(&mut self, pit_buffer: &[u8]) -> Result<(), OdinError> {
         let pit_buffer_size = pit_buffer.len() as u32;
 
@@ -278,6 +287,7 @@ impl OdinManager {
         Ok(())
     }
 
+    /// Downloads/dumps the active Partition Information Table (PIT) file from the device.
     pub fn download_pit_file(&mut self) -> Result<Vec<u8>, OdinError> {
         println!("Downloading device's PIT file...");
 
@@ -315,10 +325,12 @@ impl OdinManager {
         Ok(buffer)
     }
 
+    /// Returns whether the negotiated device session supports flashing LZ4-compressed streams.
     pub fn is_lz4_supported(&self) -> bool {
         self.lz4_supported
     }
 
+    /// Returns the negotiated bootloader protocol version of the connected device.
     pub fn bootloader_protocol_version(&self) -> u32 {
         self.bootloader_protocol_version
     }
@@ -365,11 +377,14 @@ impl OdinManager {
         Ok(())
     }
 
+    /// Flashes an uncompressed partition firmware file payload to the device.
     pub fn send_file(&mut self, info: &crate::firmware::FirmwareFile) -> Result<(), OdinError> {
         let sequences = info.sequences(self.file_transfer_sequence_max_bytes());
         self.send_raw_sequences(sequences, info.pit_entry)
     }
 
+    /// Flashes an LZ4-compressed partition firmware file payload to the device,
+    /// decompressing on-the-fly if needed.
     pub fn send_lz4_file(
         &mut self,
         info: &crate::firmware::FirmwareLz4File,
@@ -479,6 +494,8 @@ impl OdinManager {
         Ok(())
     }
 
+    /// Sets the total expected session bytes to be flashed, allowing the device
+    /// to update its progress indicator.
     pub fn set_total_bytes(&mut self, total_bytes: u64) -> Result<(), OdinError> {
         let packet = RequestPacket::total_bytes(total_bytes);
         let value = self
@@ -493,6 +510,8 @@ impl OdinManager {
     }
 }
 
+/// Triggers a reboot of the connected Samsung device into Download Mode via the
+/// specified backend protocol.
 pub fn reboot_download(usb_backend: &str) -> Result<(), OdinError> {
     use crate::usb::{RusbBackend, SerialBackend, UsbBackend, UsbTransfer, VID_SAMSUNG};
 

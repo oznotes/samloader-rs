@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Crate implementing the Samsung Odin/Loke flashing protocol and communication backends.
+
+#![deny(missing_docs)]
+
 mod error;
 mod firmware;
 mod odin;

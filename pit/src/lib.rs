@@ -14,6 +14,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Crate for parsing and manipulation of Partition Information Table (PIT) files
+//! used by Samsung devices.
+
+#![deny(missing_docs)]
+
 use binrw::{BinRead, BinWrite, binrw, io::Cursor};
 use modular_bitfield::prelude::*;
 use std::borrow::Cow;
@@ -27,12 +32,14 @@ const PARTITION_NAM_LENGTH: usize = 32;
 const FLASH_FILENAME_LENGTH: usize = 32;
 const FOTA_FILENAME_LENGTH: usize = 32;
 
+/// A fixed-length null-padded ASCII/UTF-8 string used in PIT binary headers.
 #[derive(BinRead, BinWrite, PartialEq, Eq)]
 pub struct FixedString<const LEN: usize> {
     data: [u8; LEN],
 }
 
 impl<const LEN: usize> FixedString<LEN> {
+    /// Converts the fixed-length byte buffer to a lossy standard Rust string.
     pub fn to_string_lossy(&self) -> Cow<'_, str> {
         match CStr::from_bytes_until_nul(&self.data) {
             Ok(cstr) => cstr.to_string_lossy(),
@@ -59,64 +66,93 @@ impl<const LEN: usize> PartialEq<&str> for FixedString<LEN> {
     }
 }
 
+/// Represents the target processor for the binary image.
 #[derive(BinRead, BinWrite, PartialEq, Eq, Copy, Clone, Debug)]
 #[brw(repr = u32)]
 pub enum BinaryType {
+    /// Application processor (AP / system firmware).
     ApplicationProcessor = 0,
+    /// Communication processor (CP / modem baseband).
     CommunicationProcessor = 1,
 }
 
+/// Represents the physical flash/storage media type on the device.
 #[derive(BinRead, BinWrite, PartialEq, Eq, Copy, Clone, Debug)]
 #[brw(repr = u32)]
 pub enum DeviceType {
+    /// OneNAND flash storage.
     OneNand = 0,
+    /// Standard file-system or FAT partition.
     File = 1,
+    /// MultiMediaCard / eMMC flash storage (sector size of 512 bytes).
     MMC = 2,
+    /// All storage devices.
     All = 3,
+    /// Universal Flash Storage (sector size of 4096 bytes).
     UFS = 8,
 }
 
+/// Partition block properties and flags.
 #[bitfield(bits = 32)]
 #[derive(BinRead, BinWrite, Copy, Clone, Default, PartialEq, Eq)]
 #[br(map = |x: u32| Self::from_bytes(x.to_le_bytes()))]
 #[bw(map = |x: &Self| u32::from_le_bytes(x.into_bytes()))]
 pub struct Attribute {
+    /// Whether the partition is writable.
     pub write: bool,
+    /// Whether the partition has Samsung's sector translation layer (STL).
     pub stl: bool,
     #[skip]
     __: B30,
 }
 
+/// Partition update and firmware attribute flags.
 #[bitfield(bits = 32)]
 #[derive(BinRead, BinWrite, Copy, Clone, Default, PartialEq, Eq)]
 #[br(map = |x: u32| Self::from_bytes(x.to_le_bytes()))]
 #[bw(map = |x: &Self| u32::from_le_bytes(x.into_bytes()))]
 pub struct UpdateAttribute {
+    /// Whether the partition is updated via FOTA.
     pub fota: bool,
+    /// Whether the partition is cryptographically secured.
     pub secure: bool,
     #[skip]
     __: B30,
 }
 
+/// Represents an individual partition entry in the Partition Information Table (PIT).
 #[binrw]
 #[derive(PartialEq, Eq)]
 #[brw(little)]
 pub struct PitEntry {
+    /// Target processor for the partition.
     pub binary_type: BinaryType,
+    /// Flash storage media type.
     pub device_type: DeviceType,
+    /// Unique identifier for the partition.
     pub identifier: u32,
+    /// Block/write attributes.
     pub attributes: Attribute,
+    /// Update and FOTA attributes.
     pub update_attributes: UpdateAttribute,
+    /// Starting block offset or logical block size.
     pub block_size_or_offset: u32,
+    /// Total block count allocated to the partition.
     pub block_count: u32,
+    /// Obsolete file offset field.
     pub file_offset: u32,
+    /// Obsolete file size field.
     pub file_size: u32,
+    /// Name of the partition.
     pub partition_name: FixedString<PARTITION_NAM_LENGTH>,
+    /// Target flashing image filename.
     pub flash_filename: FixedString<FLASH_FILENAME_LENGTH>,
+    /// FOTA payload package filename.
     pub fota_filename: FixedString<FOTA_FILENAME_LENGTH>,
 }
 
 impl PitEntry {
+    /// Calculates the size of the partition in bytes based on sector counts of MMC (512B) or UFS (4096B).
     pub fn partition_size(&self) -> u64 {
         let block_size = match self.device_type {
             DeviceType::MMC => 512,
@@ -129,25 +165,33 @@ impl PitEntry {
     }
 }
 
+/// Represents the parsed layout and headers of a Partition Information Table (PIT).
 #[binrw]
 #[derive(PartialEq, Eq)]
 #[brw(little)]
 pub struct PitData {
+    /// Magic identifier for verification (always 0x12349876).
     #[br(temp, assert(magic == FILE_IDENTIFIER))]
     #[bw(calc = FILE_IDENTIFIER)]
     pub magic: u32,
+    /// Number of partition entries contained in the PIT.
     #[br(temp)]
     #[bw(calc = entries.len() as u32)]
     pub entry_count: u32,
+    /// An unknown reference/config string identifier.
     pub com_tar2: FixedString<8>,
+    /// CPU or bootloader target hardware tag.
     pub cpu_bl_id: FixedString<8>,
+    /// Logical partition units count.
     pub lu_count: u16,
+    /// The collection of partition records.
     #[br(pad_before = 2, count = entry_count)]
     #[bw(pad_before = 2)]
     pub entries: Vec<PitEntry>,
 }
 
 impl PitData {
+    /// Parses binary PIT bytes into a structured `PitData` instance.
     pub fn new(data: &[u8]) -> Result<Self, binrw::Error> {
         if data.len() < 8 {
             return Err(binrw::Error::Io(std::io::Error::new(
@@ -174,14 +218,17 @@ impl PitData {
         Self::read(&mut cursor)
     }
 
+    /// Finds a partition entry by its string name.
     pub fn find_entry_by_name(&self, name: &str) -> Option<&PitEntry> {
         self.entries.iter().find(|e| e.partition_name == name)
     }
 
+    /// Finds a partition entry by its numeric partition identifier.
     pub fn find_entry_by_id(&self, id: u32) -> Option<&PitEntry> {
         self.entries.iter().find(|e| e.identifier == id)
     }
 
+    /// Packs and serializes the structured PIT representation back into standard binary bytes.
     pub fn pack(&self) -> Result<Vec<u8>, binrw::Error> {
         let mut cursor = Cursor::new(Vec::new());
         self.write(&mut cursor)?;
