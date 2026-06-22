@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  linux:
-    name: Build for Linux
+  linux-x64:
+    name: Build for Linux (x64)
     runs-on: ubuntu-24.04
 
     steps:
@@ -40,8 +40,44 @@ jobs:
           path: samloader-*.tar.xz
           archive: false
 
-  windows:
-    name: Build for Windows
+  linux-arm64:
+    name: Build for Linux (arm64)
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Build samloader
+        run: |
+          # Install packages
+          sudo apt-get update
+          sudo apt-get -y install musl-tools
+          rustup update
+          rustup target add aarch64-unknown-linux-musl
+
+          # Get linux headers since musl does not include them
+          git clone https://github.com/sabotage-linux/kernel-headers.git
+          cd kernel-headers
+          make ARCH=arm64 prefix=../linux-usr install
+          cd ../
+          export CFLAGS_aarch64_unknown_linux_musl="-I $(readlink -f linux-usr/include)"
+
+          # Build samloader
+          cargo build -p samloader --target aarch64-unknown-linux-musl --release
+          tar c -C target/aarch64-unknown-linux-musl/release samloader | \
+            xz --x86 --lzma2 > samloader-linux-arm64.tar.xz
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: samloader-*.tar.xz
+          archive: false
+
+  windows-x64:
+    name: Build for Windows (x64)
     runs-on: windows-2025
     defaults:
       run:
@@ -58,6 +94,31 @@ jobs:
           cargo build -p samloader --release
           tar c -C target/release samloader.exe | \
             xz --x86 --lzma2 > samloader-windows-x86_64.tar.xz
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: samloader-*.tar.xz
+          archive: false
+
+  windows-arm64:
+    name: Build for Windows (arm64)
+    runs-on: windows-11-arm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Build samloader
+        run: |
+          rustup update
+          cargo build -p samloader --release
+          tar c -C target/release samloader.exe | \
+            xz --x86 --lzma2 > samloader-windows-arm64.tar.xz
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
