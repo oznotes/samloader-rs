@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Samsung device Partition Information Table (PIT) parser"
+keywords = ["samsung", "firmware"]
 
 [dependencies]
 binrw = { workspace = true }

@@ -11,7 +11,7 @@ keywords = ["samsung", "firmware"]
 samloader-fus = { workspace = true }
 samloader-pit = { workspace = true }
 samloader-odin = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
+clap = { workspace = true }
 indicatif = { workspace = true }
 memmap2 = { workspace = true }
 tar = { workspace = true }
