@@ -106,7 +106,8 @@ const VERIFY_MD5_ABOUT: &str = "Verifies the MD5 checksum of one or more .tar.md
 const VERIFY_MD5_FILE_HELP: &str = "The .tar.md5 files to verify";
 
 fn main() {
-    let matches = Command::new("samloader")
+    #[allow(unused_mut)]
+    let mut cmd = Command::new("samloader")
         .about("Download and flash firmware for Samsung devices")
         .version(env!("CARGO_PKG_VERSION"))
         .subcommand_required(true)
@@ -353,8 +354,17 @@ fn main() {
         .subcommand(
             Command::new("reboot-download")
                 .about("Boot a connected Samsung device into download mode"),
-        )
-        .get_matches();
+        );
+
+    #[cfg(target_os = "linux")]
+    {
+        cmd = cmd.subcommand(
+            Command::new("fix-usb")
+                .about("Add udev rules to fix USB device access permissions on Linux"),
+        );
+    }
+
+    let matches = cmd.get_matches();
 
     let verbose = matches.get_flag("verbose");
     let usb_backend = matches
@@ -505,6 +515,8 @@ fn main() {
         Some(("reboot-download", _sub_matches)) => {
             actions::action_reboot_download(usb_backend, verbose)
         }
+        #[cfg(target_os = "linux")]
+        Some(("fix-usb", _sub_matches)) => actions::action_fix_usb(),
         _ => unreachable!(),
     };
 

@@ -23,6 +23,17 @@ pub enum OdinError {
     DeviceNotFound,
 
     /// Failed to access the USB device via libusb.
+    #[cfg(target_os = "linux")]
+    #[error(
+        "Failed to access device. libusb error: {0}\n\n\
+             On Linux, this is usually because your user lacks write permission to the USB device node.\n\
+             To automatically fix this, please run the builtin fix command as root:\n\n\
+             \tsudo samloader fix-usb"
+    )]
+    DeviceAccess(#[from] rusb::Error),
+
+    /// Failed to access the USB device via libusb.
+    #[cfg(not(target_os = "linux"))]
     #[error("Failed to access device. libusb error: {0}")]
     DeviceAccess(#[from] rusb::Error),
 

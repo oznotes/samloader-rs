@@ -215,3 +215,50 @@ pub(crate) fn action_verify_md5(files: &[String]) -> i32 {
     }
     if success { 0 } else { 1 }
 }
+
+#[cfg(target_os = "linux")]
+const UDEV_RULES_PATH: &str = "/etc/udev/rules.d/60-samloader.rules";
+
+#[cfg(target_os = "linux")]
+pub(crate) fn action_fix_usb() -> i32 {
+    if unsafe { libc::geteuid() != 0 } {
+        eprintln!("ERROR: This command must be run as root (e.g., using sudo).");
+        return 1;
+    }
+
+    println!("Writing udev rule to {}...", UDEV_RULES_PATH);
+    let rule = "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"04e8\", TAG+=\"uaccess\"\n";
+    if let Err(e) = std::fs::write(UDEV_RULES_PATH, rule) {
+        eprintln!("ERROR: Failed to write udev rules file: {}", e);
+        return 1;
+    }
+
+    println!("Reloading and triggering udev rules...");
+    let status = std::process::Command::new("udevadm")
+        .arg("control")
+        .arg("--reload-rules")
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {}
+        _ => {
+            eprintln!("ERROR: Failed to reload udev rules via udevadm.");
+            return 1;
+        }
+    }
+
+    let status = std::process::Command::new("udevadm")
+        .arg("trigger")
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {}
+        _ => {
+            eprintln!("ERROR: Failed to trigger udev rules via udevadm.");
+            return 1;
+        }
+    }
+
+    println!("SUCCESS: USB udev rules successfully configured and reloaded.");
+    0
+}
