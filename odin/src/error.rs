@@ -137,10 +137,6 @@ pub enum OdinError {
     #[error("Failed to send end session packet!")]
     EndSessionSendFailed,
 
-    /// Failed to reboot the device out of download mode.
-    #[error("Failed to send reboot device packet!")]
-    RebootDeviceSendFailed,
-
     /// Failed to initialize PIT flashing transfer.
     #[error("Failed to initialize PIT file transfer!")]
     PitFileTransferInitFailed,

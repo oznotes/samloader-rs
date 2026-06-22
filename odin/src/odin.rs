@@ -137,8 +137,15 @@ impl OdinManager {
         println!("Rebooting device...");
 
         let packet = RequestPacket::reboot_device();
-        self.request_and_response(&packet, EmptySendKind::After, 3000)
-            .map_err(|_| OdinError::RebootDeviceSendFailed)?;
+        use crate::packets::OutboundPacket;
+        if self.verbose {
+            eprintln!("Sending packet: {:#04X?}", packet);
+        }
+
+        // The device immediately reboots and drops the USB connection,
+        // so the write may partially fail and a response will never arrive.
+        // We do a fire-and-forget send with no retries and a short timeout.
+        let _ = self.usb.send_data(&packet.pack(), 500, false);
 
         Ok(())
     }
