@@ -136,7 +136,7 @@ fn main() {
                 } else {
                     "libusb"
                 })
-                .value_parser(["libusb", "vcom"])
+                .value_parser(["libusb", "vcom", "nusb"])
                 .help(USB_BACKEND_HELP),
         )
         .subcommand(

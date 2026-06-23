@@ -15,7 +15,8 @@
 
 use crate::print_error;
 use samloader_odin::{
-    OdinManager, RusbBackend, SerialBackend, UsbBackend, create_backend, verify_md5_footer,
+    NusbBackend, OdinManager, RusbBackend, SerialBackend, UsbBackend, create_backend,
+    verify_md5_footer,
 };
 use samloader_pit::PitData;
 use std::fs::File;
@@ -24,6 +25,7 @@ use std::io::{Read, Write};
 pub(crate) fn action_detect(usb_backend: &str, _verbose: bool, wait: bool) -> i32 {
     let detected = match usb_backend {
         "vcom" => SerialBackend::find_download_device(wait).is_ok(),
+        "nusb" => NusbBackend::find_download_device(wait).is_ok(),
         _ => RusbBackend::find_download_device(wait).is_ok(),
     };
     if detected {

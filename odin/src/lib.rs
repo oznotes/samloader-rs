@@ -27,7 +27,7 @@ pub use firmware::{
     FirmwareFile, FirmwareInfo, FirmwareLz4File, Lz4FrameHeader, verify_md5_footer,
 };
 pub use odin::{OdinManager, reboot_download};
-pub use usb::{RusbBackend, SerialBackend, UsbBackend, UsbTransfer, create_backend};
+pub use usb::{NusbBackend, RusbBackend, SerialBackend, UsbBackend, UsbTransfer, create_backend};
 
 // Re-export public dependencies to avoid type mismatch and SemVer issues in public APIs.
 pub use rusb;

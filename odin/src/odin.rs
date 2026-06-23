@@ -520,14 +520,23 @@ impl OdinManager {
 /// Triggers a reboot of the connected Samsung device into Download Mode via the
 /// specified backend protocol.
 pub fn reboot_download(usb_backend: &str) -> Result<(), OdinError> {
-    use crate::usb::{RusbBackend, SerialBackend, UsbBackend, UsbTransfer, VID_SAMSUNG};
+    use crate::usb::{
+        NusbBackend, RusbBackend, SerialBackend, UsbBackend, UsbTransfer, VID_SAMSUNG,
+    };
 
-    let mut backend: Box<dyn UsbTransfer> = if usb_backend == "vcom" {
-        let device = SerialBackend::find_device(false, |vid, _| vid == VID_SAMSUNG)?;
-        Box::new(SerialBackend::new(device, false)?)
-    } else {
-        let device = RusbBackend::find_device(false, |vid, _| vid == VID_SAMSUNG)?;
-        Box::new(RusbBackend::new(device, false)?)
+    let mut backend: Box<dyn UsbTransfer> = match usb_backend {
+        "vcom" => {
+            let device = SerialBackend::find_device(false, |vid, _| vid == VID_SAMSUNG)?;
+            Box::new(SerialBackend::new(device, false)?)
+        }
+        "nusb" => {
+            let device = NusbBackend::find_device(false, |vid, _| vid == VID_SAMSUNG)?;
+            Box::new(NusbBackend::new(device, false)?)
+        }
+        _ => {
+            let device = RusbBackend::find_device(false, |vid, _| vid == VID_SAMSUNG)?;
+            Box::new(RusbBackend::new(device, false)?)
+        }
     };
 
     let cmd: &[u8] = b"AT+SUDDLMOD=0,0\r";

@@ -12,6 +12,7 @@ keywords = ["samsung", "firmware"]
 samloader-pit = { workspace = true }
 memmap2 = { workspace = true }
 rusb = { workspace = true }
+nusb = { workspace = true }
 binrw = { workspace = true }
 fast-md5 = { workspace = true }
 serialport = { workspace = true }
