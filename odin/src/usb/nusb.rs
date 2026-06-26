@@ -52,7 +52,7 @@ impl UsbBackend for NusbBackend {
         let handle = device
             .open()
             .wait()
-            .map_err(|e| OdinError::SerialError(format!("Failed to open device: {}", e)))?;
+            .map_err(|e| OdinError::DeviceAccess(Box::new(e)))?;
 
         // Traverse configuration and select the class USB_CLASS_CDC_DATA interface with 2 endpoints
         let mut interface_index = -1;

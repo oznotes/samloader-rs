@@ -22,20 +22,20 @@ pub enum OdinError {
     #[error("Failed to detect compatible download-mode device.")]
     DeviceNotFound,
 
-    /// Failed to access the USB device via libusb.
-    #[cfg(all(target_os = "linux", feature = "rusb"))]
+    /// Failed to access the USB device.
+    #[cfg(target_os = "linux")]
     #[error(
-        "Failed to access device. libusb error: {0}\n\n\
+        "Failed to access device. Error: {0}\n\n\
              On Linux, this is usually because your user lacks write permission to the USB device node.\n\
              To automatically fix this, please run the builtin fix command as root:\n\n\
              \tsudo samloader fix-usb"
     )]
-    DeviceAccess(#[from] rusb::Error),
+    DeviceAccess(#[from] Box<dyn std::error::Error + Send + Sync>),
 
-    /// Failed to access the USB device via libusb.
-    #[cfg(all(not(target_os = "linux"), feature = "rusb"))]
-    #[error("Failed to access device. libusb error: {0}")]
-    DeviceAccess(#[from] rusb::Error),
+    /// Failed to access the USB device.
+    #[cfg(not(target_os = "linux"))]
+    #[error("Failed to access device. Error: {0}")]
+    DeviceAccess(#[from] Box<dyn std::error::Error + Send + Sync>),
 
     /// Failed to retrieve the configuration descriptor from the USB device.
     #[error("Failed to retrieve config descriptor")]

@@ -75,7 +75,7 @@ impl UsbBackend for RusbBackend {
     fn new(device: Self::UsbDevice, verbose: bool) -> Result<Self, OdinError> {
         let handle = match device.open() {
             Ok(h) => h,
-            Err(e) => return Err(OdinError::DeviceAccess(e)),
+            Err(e) => return Err(OdinError::DeviceAccess(Box::new(e))),
         };
 
         if let Ok(config) = handle.active_configuration() {
