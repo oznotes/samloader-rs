@@ -520,7 +520,6 @@ impl OdinManager {
 /// Triggers a reboot of the connected Samsung device into Download Mode via the
 /// specified backend protocol.
 pub fn reboot_download(usb_backend: crate::usb::UsbBackendOption) -> Result<(), OdinError> {
-    #[allow(unused_imports)]
     use crate::usb::{UsbTransfer, VID_SAMSUNG};
 
     let mut backend: Box<dyn UsbTransfer> = match usb_backend {
@@ -542,8 +541,6 @@ pub fn reboot_download(usb_backend: crate::usb::UsbBackendOption) -> Result<(), 
             let device = RusbBackend::find_device(false, |vid, _| vid == VID_SAMSUNG)?;
             Ok::<Box<dyn UsbTransfer>, OdinError>(Box::new(RusbBackend::new(device, false)?))
         }
-        #[allow(unreachable_patterns)]
-        _ => Err(OdinError::DeviceNotFound),
     }?;
 
     let cmd: &[u8] = b"AT+SUDDLMOD=0,0\r";
