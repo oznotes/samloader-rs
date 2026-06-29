@@ -18,14 +18,13 @@ use super::*;
 /// USB communication backend using `nusb`.
 pub struct NusbBackend {
     verbose: bool,
-    device: ::nusb::Device,
-    _interface: ::nusb::Interface,
+    handle: ::nusb::Device,
     ep_in: ::nusb::Endpoint<::nusb::transfer::Bulk, ::nusb::transfer::In>,
     ep_out: ::nusb::Endpoint<::nusb::transfer::Bulk, ::nusb::transfer::Out>,
 }
 
 impl NusbBackend {
-    fn print_device_info(device: &::nusb::DeviceInfo, _handle: &::nusb::Device) {
+    fn print_device_info(device: &::nusb::DeviceInfo) {
         if let Some(manufacturer) = device.manufacturer_string() {
             eprintln!("      Manufacturer: \"{}\"", manufacturer);
         }
@@ -93,7 +92,7 @@ impl UsbBackend for NusbBackend {
         }
 
         if verbose {
-            Self::print_device_info(&device, &handle);
+            Self::print_device_info(&device);
         }
 
         let interface = handle
@@ -117,8 +116,7 @@ impl UsbBackend for NusbBackend {
 
         Ok(Self {
             verbose,
-            device: handle,
-            _interface: interface,
+            handle,
             ep_in,
             ep_out,
         })
@@ -151,7 +149,7 @@ impl UsbBackend for NusbBackend {
 
 impl UsbTransfer for NusbBackend {
     fn reset(&mut self) {
-        if let Err(e) = self.device.reset().wait() {
+        if let Err(e) = self.handle.reset().wait() {
             print_warning!(self.verbose, "Failed to reset device! Result: {}", e);
         }
     }
