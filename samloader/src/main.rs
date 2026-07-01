@@ -45,6 +45,8 @@ const ENABLED_BACKENDS: &[&str] = &[
     UsbBackendOption::Libusb.to_str(),
     #[cfg(feature = "serialport")]
     UsbBackendOption::Vcom.to_str(),
+    #[cfg(any(feature = "mock", debug_assertions))]
+    UsbBackendOption::Mock.to_str(),
 ];
 
 // On Windows, the default USB backend is set to VCOM rather than libusb/nusb.

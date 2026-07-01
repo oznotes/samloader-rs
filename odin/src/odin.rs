@@ -541,6 +541,11 @@ pub fn reboot_download(usb_backend: crate::usb::UsbBackendOption) -> Result<(), 
             let device = RusbBackend::find_device(false, |vid, _| vid == VID_SAMSUNG)?;
             Ok::<Box<dyn UsbTransfer>, OdinError>(Box::new(RusbBackend::new(device, false)?))
         }
+        #[cfg(any(feature = "mock", debug_assertions))]
+        crate::usb::UsbBackendOption::Mock => {
+            use crate::usb::MockBackend;
+            Ok::<Box<dyn UsbTransfer>, OdinError>(Box::new(MockBackend::new(false)))
+        }
     }?;
 
     let cmd: &[u8] = b"AT+SUDDLMOD=0,0\r";
@@ -550,4 +555,32 @@ pub fn reboot_download(usb_backend: crate::usb::UsbBackendOption) -> Result<(), 
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::usb::MockBackend;
+
+    #[test]
+    fn test_odin_mock_session_and_pit_download() {
+        let backend = Box::new(MockBackend::new(true));
+        let mut manager = OdinManager::new(backend, true);
+
+        // handshake
+        assert!(manager.init().is_ok());
+
+        // session begin
+        assert!(manager.begin_session().is_ok());
+        assert_eq!(manager.bootloader_protocol_version(), 2);
+        assert!(manager.is_lz4_supported());
+
+        // PIT dump
+        let pit_bytes = manager.download_pit_file().unwrap();
+        // Q7MQ_EUR_OPENX.pit is exactly 18492 bytes including cryptographic signature
+        assert_eq!(pit_bytes.len(), 18492);
+
+        // end session
+        assert!(manager.end_session().is_ok());
+    }
 }

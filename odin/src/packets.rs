@@ -32,7 +32,7 @@ pub(crate) trait InboundPacket: Sized {
     fn unpack(buffer: &[u8]) -> Result<Self, String>;
 }
 
-#[derive(BinWrite, Debug)]
+#[derive(BinRead, BinWrite, Debug)]
 #[brw(little)]
 pub(crate) enum RequestPacket {
     #[brw(magic = 0x64u32)]
@@ -48,7 +48,7 @@ pub(crate) enum RequestPacket {
     EndSession(EndSessionRequest),
 }
 
-#[derive(BinWrite, Debug)]
+#[derive(BinRead, BinWrite, Debug)]
 #[brw(little)]
 pub(crate) enum SessionRequest {
     #[brw(magic = 0u32)]
@@ -59,7 +59,7 @@ pub(crate) enum SessionRequest {
     FilePartSize { size: u32 },
 }
 
-#[derive(BinWrite, Debug)]
+#[derive(BinRead, BinWrite, Debug)]
 #[brw(little)]
 pub(crate) enum PitFileRequest {
     #[brw(magic = 0u32)]
@@ -72,14 +72,14 @@ pub(crate) enum PitFileRequest {
     End { size: u32 },
 }
 
-#[derive(BinWrite, Debug)]
+#[derive(BinRead, BinWrite, Debug)]
 #[brw(little)]
 pub(crate) enum PitFilePart {
     Flash { size: u32 },
     Dump { part: u32 },
 }
 
-#[derive(BinWrite, Debug)]
+#[derive(BinRead, BinWrite, Debug)]
 #[brw(little)]
 pub(crate) enum FileTransferRequest {
     #[brw(magic = 0u32)]
@@ -96,7 +96,7 @@ pub(crate) enum FileTransferRequest {
     Lz4End(FileTransferEnd),
 }
 
-#[derive(BinWrite, Debug)]
+#[derive(BinRead, BinWrite, Debug)]
 #[brw(little)]
 pub(crate) enum FileTransferEnd {
     #[brw(magic = 0u32)]
@@ -116,7 +116,7 @@ pub(crate) enum FileTransferEnd {
     },
 }
 
-#[derive(BinWrite, Debug)]
+#[derive(BinRead, BinWrite, Debug)]
 #[brw(little)]
 pub(crate) enum EndSessionRequest {
     #[brw(magic = 0u32)]

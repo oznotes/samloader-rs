@@ -104,6 +104,12 @@ pub use nusb::NusbBackend;
 #[cfg(feature = "nusb")]
 mod nusb;
 
+#[cfg(any(feature = "mock", debug_assertions))]
+pub use mock::MockBackend;
+
+#[cfg(any(feature = "mock", debug_assertions))]
+mod mock;
+
 /// Supported USB backend options.
 #[derive(Debug, Clone, Copy)]
 pub enum UsbBackendOption {
@@ -116,6 +122,9 @@ pub enum UsbBackendOption {
     /// nusb backend.
     #[cfg(feature = "nusb")]
     Nusb,
+    /// Mock backend.
+    #[cfg(any(feature = "mock", debug_assertions))]
+    Mock,
 }
 
 impl TryFrom<&str> for UsbBackendOption {
@@ -129,6 +138,8 @@ impl TryFrom<&str> for UsbBackendOption {
             "vcom" => Ok(UsbBackendOption::Vcom),
             #[cfg(feature = "nusb")]
             "nusb" => Ok(UsbBackendOption::Nusb),
+            #[cfg(any(feature = "mock", debug_assertions))]
+            "mock" => Ok(UsbBackendOption::Mock),
             _ => Err(OdinError::ParseError(format!("Unknown USB backend: {s}"))),
         }
     }
@@ -152,6 +163,8 @@ impl UsbBackendOption {
             UsbBackendOption::Vcom => "vcom",
             #[cfg(feature = "nusb")]
             UsbBackendOption::Nusb => "nusb",
+            #[cfg(any(feature = "mock", debug_assertions))]
+            UsbBackendOption::Mock => "mock",
         }
     }
 }
@@ -187,6 +200,11 @@ pub fn create_backend(
             let backend = RusbBackend::new(device, verbose)?;
             Ok(Box::new(backend))
         }
+        #[cfg(any(feature = "mock", debug_assertions))]
+        UsbBackendOption::Mock => {
+            let backend = MockBackend::new(verbose);
+            Ok(Box::new(backend))
+        }
     }
 }
 
@@ -199,5 +217,7 @@ pub fn detect_device(usb_backend: UsbBackendOption, wait: bool) -> bool {
         UsbBackendOption::Nusb => NusbBackend::find_download_device(wait).is_ok(),
         #[cfg(feature = "rusb")]
         UsbBackendOption::Libusb => RusbBackend::find_download_device(wait).is_ok(),
+        #[cfg(any(feature = "mock", debug_assertions))]
+        UsbBackendOption::Mock => true,
     }
 }
