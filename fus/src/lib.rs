@@ -18,9 +18,13 @@
 #![deny(missing_docs)]
 
 mod auth;
+mod download;
+mod error;
 mod fusclient;
 mod xml;
 
+pub use download::DownloadProgress;
+pub use error::{Error, Result};
 pub use fusclient::{Aes128EcbDec, FusClient};
 pub use xml::{BinaryInform, VersionInfo};
 
