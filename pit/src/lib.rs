@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_pit_repack() {
-        let original_bytes = include_bytes!("Q7MQ_EUR_OPENX.pit");
+        let original_bytes = include_bytes!("../../test-data/Q7MQ_EUR_OPENX.pit");
         let pit_data = PitData::new(original_bytes).expect("Failed to parse original PIT");
         let repacked_bytes = pit_data.pack().expect("Failed to repack PIT");
 
