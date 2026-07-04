@@ -355,6 +355,21 @@ impl OdinManager {
         Bytes: AsRef<[u8]>,
         Iter: Iterator<Item = Bytes>,
     {
+        let mut progress = |_| {};
+        self.send_raw_sequences_with_progress(sequences, pit_entry, &mut progress)
+    }
+
+    fn send_raw_sequences_with_progress<Iter, Bytes, F>(
+        &mut self,
+        sequences: Iter,
+        pit_entry: &PitEntry,
+        progress: &mut F,
+    ) -> Result<(), OdinError>
+    where
+        Bytes: AsRef<[u8]>,
+        Iter: Iterator<Item = Bytes>,
+        F: FnMut(u64),
+    {
         let packet = RequestPacket::file_transfer_flash();
         self.request_and_response(&packet, EmptySendKind::After, 3000)
             .map_err(|_| OdinError::FileTransferInitFailed)?;
@@ -378,7 +393,13 @@ impl OdinManager {
                 ),
             };
 
-            self.send_one_sequence(&start_packet, &end_packet, sequence_data)?;
+            self.send_one_sequence(
+                &start_packet,
+                &end_packet,
+                sequence_data,
+                sequence_data.len() as u64,
+                progress,
+            )?;
         }
 
         Ok(())
@@ -390,15 +411,43 @@ impl OdinManager {
         self.send_raw_sequences(sequences, info.pit_entry)
     }
 
+    /// Flashes an uncompressed partition firmware file payload to the device,
+    /// calling `progress` with transferred byte deltas after each acknowledged file part.
+    pub fn send_file_with_progress<F>(
+        &mut self,
+        info: &crate::firmware::FirmwareFile,
+        progress: &mut F,
+    ) -> Result<(), OdinError>
+    where
+        F: FnMut(u64),
+    {
+        let sequences = info.sequences(self.file_transfer_sequence_max_bytes());
+        self.send_raw_sequences_with_progress(sequences, info.pit_entry, progress)
+    }
+
     /// Flashes an LZ4-compressed partition firmware file payload to the device,
     /// decompressing on-the-fly if needed.
     pub fn send_lz4_file(
         &mut self,
         info: &crate::firmware::FirmwareLz4File,
     ) -> Result<(), OdinError> {
+        let mut progress = |_| {};
+        self.send_lz4_file_with_progress(info, &mut progress)
+    }
+
+    /// Flashes an LZ4-compressed partition firmware file payload to the device,
+    /// calling `progress` with decompressed byte deltas after acknowledged file parts.
+    pub fn send_lz4_file_with_progress<F>(
+        &mut self,
+        info: &crate::firmware::FirmwareLz4File,
+        progress: &mut F,
+    ) -> Result<(), OdinError>
+    where
+        F: FnMut(u64),
+    {
         if !self.lz4_supported || info.header.block_max_size != 1024 * 1024 {
             let sequences = info.decompressed_sequences(self.file_transfer_sequence_max_bytes());
-            return self.send_raw_sequences(sequences, info.pit_entry);
+            return self.send_raw_sequences_with_progress(sequences, info.pit_entry, progress);
         }
 
         let packet = RequestPacket::lz4_file_transfer_flash();
@@ -426,7 +475,13 @@ impl OdinManager {
                 ),
             };
 
-            self.send_one_sequence(&start_packet, &end_packet, sequence_data)?;
+            self.send_one_sequence(
+                &start_packet,
+                &end_packet,
+                sequence_data,
+                decompressed_size as u64,
+                progress,
+            )?;
         }
 
         Ok(())
@@ -437,9 +492,14 @@ impl OdinManager {
         start_packet: &RequestPacket,
         end_packet: &RequestPacket,
         sequence_data: &[u8],
+        progress_total_bytes: u64,
+        progress: &mut impl FnMut(u64),
     ) -> Result<(), OdinError> {
         self.request_and_response(start_packet, EmptySendKind::BeforeAndAfter, 3000)
             .map_err(|_| OdinError::FileTransferSequenceBeginFailed)?;
+
+        let mut sequence_wire_bytes = 0_u64;
+        let mut sequence_progress_bytes = 0_u64;
 
         for (file_part_index, file_buffer) in sequence_data
             .chunks(self.file_transfer_packet_size)
@@ -474,6 +534,18 @@ impl OdinManager {
                     {
                         if response.value as usize == file_part_index {
                             success = true;
+                            sequence_wire_bytes += file_buffer.len() as u64;
+                            let progress_bytes = if sequence_data.is_empty() {
+                                progress_total_bytes
+                            } else {
+                                progress_total_bytes.saturating_mul(sequence_wire_bytes)
+                                    / sequence_data.len() as u64
+                            };
+                            let delta = progress_bytes.saturating_sub(sequence_progress_bytes);
+                            if delta > 0 {
+                                progress(delta);
+                                sequence_progress_bytes = progress_bytes;
+                            }
                             break;
                         } else if retry == 0 {
                             return Err(OdinError::FilePartIndexMismatch {
@@ -489,6 +561,11 @@ impl OdinManager {
             if !success {
                 return Err(OdinError::FilePartResponseReceiveFailed);
             }
+        }
+
+        let remaining = progress_total_bytes.saturating_sub(sequence_progress_bytes);
+        if remaining > 0 {
+            progress(remaining);
         }
 
         self.request_and_response(
