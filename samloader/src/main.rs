@@ -24,6 +24,8 @@ mod flash;
 use clap::{Arg, ArgAction, Command};
 use samloader_fus::{FusClient, fetch_version_xml};
 use samloader_odin::UsbBackendOption;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 pub(crate) struct PartitionArg {
     pub(crate) name: Option<String>,
@@ -124,6 +126,8 @@ const REPARTITION_HELP: &str = "Repartition the device. WARNING: It's strongly r
 const SKIP_SIZE_CHECK_HELP: &str = "Do not verify that files fit in the specified partition";
 const PIT_HELP: &str = "The PIT file to use for repartitioning or flashing";
 const SKIP_MD5_HELP: &str = "Skip MD5 checksum verification";
+const FOLDER_HELP: &str = "Folder containing BL/AP/CP/CSC/USERDATA tar package files";
+const CSC_MODE_HELP: &str = "CSC package to auto-select from --folder";
 const BL_HELP: &str = "BL tar package file";
 const AP_HELP: &str = "AP tar package file";
 const CP_HELP: &str = "CP tar package file";
@@ -177,6 +181,237 @@ impl OdinOptionExt for Command {
                 .action(ArgAction::SetTrue)
                 .help(NO_REBOOT_HELP),
         )
+    }
+}
+
+#[derive(Debug)]
+struct FolderPackages {
+    bl: Option<String>,
+    ap: Option<String>,
+    cp: Option<String>,
+    csc: Option<String>,
+    userdata: Option<String>,
+}
+
+impl FolderPackages {
+    fn append_to(self, packages: &mut Vec<String>) {
+        if let Some(bl) = self.bl {
+            packages.push(bl);
+        }
+        if let Some(ap) = self.ap {
+            packages.push(ap);
+        }
+        if let Some(cp) = self.cp {
+            packages.push(cp);
+        }
+        if let Some(csc) = self.csc {
+            packages.push(csc);
+        }
+        if let Some(userdata) = self.userdata {
+            packages.push(userdata);
+        }
+    }
+}
+
+fn is_tar_package_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.ends_with(".tar") || name.ends_with(".tar.md5")
+}
+
+fn path_to_cli_string(path: PathBuf) -> String {
+    path.to_string_lossy().to_string()
+}
+
+fn select_package(label: &str, mut candidates: Vec<PathBuf>) -> Result<Option<String>, String> {
+    candidates.sort();
+    let mut md5_candidates = Vec::new();
+    let mut tar_candidates = Vec::new();
+
+    for candidate in candidates {
+        let name = candidate
+            .file_name()
+            .map(|n| n.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        if name.ends_with(".tar.md5") {
+            md5_candidates.push(candidate);
+        } else {
+            tar_candidates.push(candidate);
+        }
+    }
+
+    let selected = if !md5_candidates.is_empty() {
+        if md5_candidates.len() > 1 {
+            return Err(format!(
+                "Multiple {label} .tar.md5 packages found. Specify the package explicitly."
+            ));
+        }
+        md5_candidates.pop()
+    } else {
+        if tar_candidates.len() > 1 {
+            return Err(format!(
+                "Multiple {label} .tar packages found. Specify the package explicitly."
+            ));
+        }
+        tar_candidates.pop()
+    };
+
+    Ok(selected.map(path_to_cli_string))
+}
+
+fn scan_package_folder(folder: &str, csc_mode: &str) -> Result<FolderPackages, String> {
+    let folder_path = Path::new(folder);
+    if !folder_path.is_dir() {
+        return Err(format!(
+            "Firmware folder \"{folder}\" does not exist or is not a directory."
+        ));
+    }
+
+    let mut bl = Vec::new();
+    let mut ap = Vec::new();
+    let mut cp = Vec::new();
+    let mut home_csc = Vec::new();
+    let mut csc = Vec::new();
+    let mut userdata = Vec::new();
+
+    let entries = fs::read_dir(folder_path)
+        .map_err(|e| format!("Failed to read firmware folder \"{folder}\": {e}"))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read firmware folder entry: {e}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("Failed to read firmware folder entry type: {e}"))?;
+        if !file_type.is_file() {
+            continue;
+        }
+
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !is_tar_package_name(&name) {
+            continue;
+        }
+
+        let upper_name = name.to_ascii_uppercase();
+        let path = entry.path();
+        if upper_name.starts_with("BL_") {
+            bl.push(path);
+        } else if upper_name.starts_with("AP_") {
+            ap.push(path);
+        } else if upper_name.starts_with("CP_") {
+            cp.push(path);
+        } else if upper_name.starts_with("HOME_CSC_") {
+            home_csc.push(path);
+        } else if upper_name.starts_with("CSC_") {
+            csc.push(path);
+        } else if upper_name.starts_with("USERDATA_") {
+            userdata.push(path);
+        }
+    }
+
+    let home_csc = select_package("HOME_CSC", home_csc)?;
+    let csc = select_package("CSC", csc)?;
+    let selected_csc = match csc_mode {
+        "home" => {
+            if home_csc.is_none() && csc.is_some() {
+                return Err(
+                    "HOME_CSC package was not found. Use --csc-mode wipe to select CSC instead."
+                        .to_string(),
+                );
+            }
+            home_csc
+        }
+        "wipe" => {
+            if csc.is_none() && home_csc.is_some() {
+                return Err(
+                    "CSC package was not found. Omit --csc-mode wipe to select HOME_CSC instead."
+                        .to_string(),
+                );
+            }
+            csc
+        }
+        _ => unreachable!("csc-mode is validated by clap"),
+    };
+
+    Ok(FolderPackages {
+        bl: select_package("BL", bl)?,
+        ap: select_package("AP", ap)?,
+        cp: select_package("CP", cp)?,
+        csc: selected_csc,
+        userdata: select_package("USERDATA", userdata)?,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_firmware_dir(test_name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "samloader-rs-{test_name}-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&dir).unwrap();
+        dir
+    }
+
+    fn write_package(dir: &Path, name: &str) {
+        let mut file = File::create(dir.join(name)).unwrap();
+        file.write_all(b"test").unwrap();
+    }
+
+    #[test]
+    fn folder_mode_defaults_to_home_csc() {
+        let dir = temp_firmware_dir("home-csc");
+        write_package(&dir, "AP_test.tar.md5");
+        write_package(&dir, "CSC_test.tar.md5");
+        write_package(&dir, "HOME_CSC_test.tar.md5");
+
+        let selection = scan_package_folder(dir.to_str().unwrap(), "home").unwrap();
+
+        assert!(selection.ap.unwrap().ends_with("AP_test.tar.md5"));
+        assert!(selection.csc.unwrap().ends_with("HOME_CSC_test.tar.md5"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn folder_mode_wipe_selects_regular_csc() {
+        let dir = temp_firmware_dir("wipe-csc");
+        write_package(&dir, "CSC_test.tar.md5");
+        write_package(&dir, "HOME_CSC_test.tar.md5");
+
+        let selection = scan_package_folder(dir.to_str().unwrap(), "wipe").unwrap();
+
+        assert!(selection.csc.unwrap().ends_with("CSC_test.tar.md5"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn folder_mode_home_rejects_regular_csc_fallback() {
+        let dir = temp_firmware_dir("home-rejects-csc");
+        write_package(&dir, "CSC_test.tar.md5");
+
+        let err = scan_package_folder(dir.to_str().unwrap(), "home").unwrap_err();
+
+        assert!(err.contains("--csc-mode wipe"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn folder_mode_prefers_md5_package_over_tar_package() {
+        let dir = temp_firmware_dir("prefer-md5");
+        write_package(&dir, "BL_test.tar");
+        write_package(&dir, "BL_test.tar.md5");
+
+        let selection = scan_package_folder(dir.to_str().unwrap(), "home").unwrap();
+
+        assert!(selection.bl.unwrap().ends_with("BL_test.tar.md5"));
+        fs::remove_dir_all(dir).unwrap();
     }
 }
 
@@ -306,6 +541,20 @@ fn main() {
                         .help(SKIP_MD5_HELP),
                 )
                 .arg(Arg::new("pit").long("pit").num_args(1).help(PIT_HELP))
+                .arg(
+                    Arg::new("folder")
+                        .long("folder")
+                        .num_args(1)
+                        .help(FOLDER_HELP),
+                )
+                .arg(
+                    Arg::new("csc-mode")
+                        .long("csc-mode")
+                        .num_args(1)
+                        .default_value("home")
+                        .value_parser(["home", "wipe"])
+                        .help(CSC_MODE_HELP),
+                )
                 .arg(
                     Arg::new("bl")
                         .short('b')
@@ -463,6 +712,21 @@ fn main() {
         ),
         Some(("flash", sub_matches)) => {
             let mut packages = Vec::new();
+            if let Some(folder) = sub_matches.get_one::<String>("folder") {
+                let csc_mode = sub_matches
+                    .get_one::<String>("csc-mode")
+                    .map(|s| s.as_str())
+                    .unwrap_or("home");
+                let folder_packages = match scan_package_folder(folder, csc_mode) {
+                    Ok(packages) => packages,
+                    Err(e) => {
+                        print_error!("{}", e);
+                        std::process::exit(1);
+                    }
+                };
+                folder_packages.append_to(&mut packages);
+            }
+
             if let Some(bl) = sub_matches.get_one::<String>("bl") {
                 packages.push(bl.clone());
             }

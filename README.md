@@ -29,8 +29,23 @@ Options:
 - Downloads firmware using multiple parallel connections (default: 8) to bypass server-side connection speed throttling and maximize bandwidth usage.
 - Decrypts firmware files on-the-fly, eliminating separate download and decryption steps.
 - Supports flashing raw images and official package files across Linux, macOS, and Windows.
+- Auto-selects BL/AP/CP/CSC/USERDATA package files from an extracted firmware folder.
 - Processes and extracts official TAR firmware packages in-memory, avoiding slow disk write operations.
 - Transmits raw LZ4-compressed data directly to supported devices to reduce USB transfer size and time.
+
+## Flashing an extracted firmware folder
+
+After extracting the outer firmware ZIP, flash the folder directly:
+
+```bash
+samloader flash --folder /path/to/firmware-folder
+```
+
+Folder flashing selects `HOME_CSC` by default to avoid a factory reset. To select the regular `CSC` package instead, use:
+
+```bash
+samloader flash --folder /path/to/firmware-folder --csc-mode wipe
+```
 
 ## Install
 
