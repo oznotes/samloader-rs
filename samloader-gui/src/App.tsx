@@ -276,7 +276,7 @@ export function App() {
       return `samloader${globals} flash${opts}${packages.bl ? ` -b ${quote(packages.bl)}` : ""}${packages.ap ? ` -a ${quote(packages.ap)}` : ""}${packages.cp ? ` -c ${quote(packages.cp)}` : ""}${packages.csc ? ` -s ${quote(packages.csc)}` : ""}${packages.userdata ? ` -u ${quote(packages.userdata)}` : ""}`;
     }
     if (view === "updates") return `samloader${globals} check-update -m ${uModel || "MODEL"} -r ${uRegion || "CSC"} --all`;
-    if (view === "device") return pitRows.length ? `samloader${globals} print-pit` : `samloader${globals} detect --wait`;
+    if (view === "device") return pitRows.length ? `samloader${globals} print-pit` : `samloader${globals} detect`;
     if (view === "verify") return `samloader verify-md5 ${verifyRows.map((row) => quote(row.file)).join(" ") || "<files>"}`;
     return `samloader${globals}`;
   }, [backend, cscMode, dModel, dOut, dRegion, dThreads, dVersion, flashMode, flashOpts, folder, packages, pitRows.length, uModel, uRegion, verbose, verifyRows, view]);
@@ -647,7 +647,7 @@ export function App() {
             {view === "device" && (
               <div className="stack wide">
                 <div className="action-cards">
-                  <ActionCard icon={<MagnifyingGlass />} title="Detect device" text="Scan download-mode backends" onClick={() => detectDevice(true)} />
+                  <ActionCard icon={<MagnifyingGlass />} title="Detect device" text="Scan download-mode backends" onClick={() => detectDevice(false)} />
                   <ActionCard icon={<Table />} title="Print PIT" text="Read partition table" onClick={printPit} />
                   <ActionCard icon={<ArrowUDownLeft />} title="Reboot to download" text="Ask connected device to reboot" onClick={rebootDownload} />
                 </div>

@@ -923,37 +923,56 @@ fn scan_firmware_folder(folder: String, csc_mode: String) -> Result<FolderPackag
     scan_package_folder_impl(&folder, &csc_mode)
 }
 
-#[tauri::command]
-fn check_updates(model: String, region: String) -> Result<UpdateInfo, String> {
-    let info = FusClient::new()
-        .and_then(|client| client.fetch_history(&model, &region))
-        .or_else(|_| fetch_version_xml(&model, &region))
-        .map_err(|e| e.to_string())?;
-    Ok(UpdateInfo {
-        latest: info.latest,
-        previous: info.previous,
-        beta: info.beta,
-    })
+async fn run_blocking<T, F>(task: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn detect_download_device(backend: String, wait: bool) -> Result<DeviceStatus, String> {
-    let backend = backend_from_str(&backend)?;
-    let connected = detect_device(backend, wait);
-    Ok(DeviceStatus {
-        connected,
-        label: if connected {
-            "Download mode device".to_string()
-        } else {
-            "No download-mode device".to_string()
-        },
+async fn check_updates(model: String, region: String) -> Result<UpdateInfo, String> {
+    run_blocking(move || {
+        let info = FusClient::new()
+            .and_then(|client| client.fetch_history(&model, &region))
+            .or_else(|_| fetch_version_xml(&model, &region))
+            .map_err(|e| e.to_string())?;
+        Ok(UpdateInfo {
+            latest: info.latest,
+            previous: info.previous,
+            beta: info.beta,
+        })
     })
+    .await
 }
 
 #[tauri::command]
-fn reboot_to_download(backend: String) -> Result<(), String> {
-    let backend = backend_from_str(&backend)?;
-    reboot_download(backend).map_err(|e| e.to_string())
+async fn detect_download_device(backend: String, wait: bool) -> Result<DeviceStatus, String> {
+    run_blocking(move || {
+        let backend = backend_from_str(&backend)?;
+        let connected = detect_device(backend, wait);
+        Ok(DeviceStatus {
+            connected,
+            label: if connected {
+                "Download mode device".to_string()
+            } else {
+                "No download-mode device".to_string()
+            },
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+async fn reboot_to_download(backend: String) -> Result<(), String> {
+    run_blocking(move || {
+        let backend = backend_from_str(&backend)?;
+        reboot_download(backend).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -966,59 +985,68 @@ fn read_pit_file(path: String) -> Result<Vec<PitEntryView>, String> {
 }
 
 #[tauri::command]
-fn read_device_pit(
+async fn read_device_pit(
     backend: String,
     wait: bool,
     verbose: bool,
 ) -> Result<Vec<PitEntryView>, String> {
-    let backend = backend_from_str(&backend)?;
-    let usb = create_backend(backend, verbose, wait).map_err(|e| e.to_string())?;
-    let mut odin_manager = OdinManager::new(usb, verbose);
-    odin_manager.init().map_err(|e| e.to_string())?;
-    odin_manager.begin_session().map_err(|e| e.to_string())?;
-    let bytes = odin_manager
-        .download_pit_file()
-        .map_err(|e| e.to_string())?;
-    odin_manager.end_session().map_err(|e| e.to_string())?;
-    pit_entries_from_bytes(&bytes)
+    run_blocking(move || {
+        let backend = backend_from_str(&backend)?;
+        let usb = create_backend(backend, verbose, wait).map_err(|e| e.to_string())?;
+        let mut odin_manager = OdinManager::new(usb, verbose);
+        odin_manager.init().map_err(|e| e.to_string())?;
+        odin_manager.begin_session().map_err(|e| e.to_string())?;
+        let bytes = odin_manager
+            .download_pit_file()
+            .map_err(|e| e.to_string())?;
+        odin_manager.end_session().map_err(|e| e.to_string())?;
+        pit_entries_from_bytes(&bytes)
+    })
+    .await
 }
 
 #[tauri::command]
-fn dump_device_pit(
+async fn dump_device_pit(
     backend: String,
     wait: bool,
     verbose: bool,
     output: String,
 ) -> Result<(), String> {
-    let backend = backend_from_str(&backend)?;
-    let usb = create_backend(backend, verbose, wait).map_err(|e| e.to_string())?;
-    let mut odin_manager = OdinManager::new(usb, verbose);
-    odin_manager.init().map_err(|e| e.to_string())?;
-    odin_manager.begin_session().map_err(|e| e.to_string())?;
-    let bytes = odin_manager
-        .download_pit_file()
-        .map_err(|e| e.to_string())?;
-    odin_manager.end_session().map_err(|e| e.to_string())?;
-    fs::write(&output, bytes).map_err(|e| format!("Failed to write PIT file: {e}"))
+    run_blocking(move || {
+        let backend = backend_from_str(&backend)?;
+        let usb = create_backend(backend, verbose, wait).map_err(|e| e.to_string())?;
+        let mut odin_manager = OdinManager::new(usb, verbose);
+        odin_manager.init().map_err(|e| e.to_string())?;
+        odin_manager.begin_session().map_err(|e| e.to_string())?;
+        let bytes = odin_manager
+            .download_pit_file()
+            .map_err(|e| e.to_string())?;
+        odin_manager.end_session().map_err(|e| e.to_string())?;
+        fs::write(&output, bytes).map_err(|e| format!("Failed to write PIT file: {e}"))
+    })
+    .await
 }
 
 #[tauri::command]
-fn verify_md5_files(files: Vec<String>) -> Vec<VerifyResult> {
-    files
-        .into_iter()
-        .map(|file| match File::open(&file).and_then(verify_md5_footer) {
-            Ok(_) => VerifyResult {
-                file,
-                ok: true,
-                message: "MD5 verification successful".to_string(),
-            },
-            Err(e) => VerifyResult {
-                file,
-                ok: false,
-                message: e.to_string(),
-            },
-        })
-        .collect()
+async fn verify_md5_files(files: Vec<String>) -> Result<Vec<VerifyResult>, String> {
+    run_blocking(move || {
+        Ok(files
+            .into_iter()
+            .map(|file| match File::open(&file).and_then(verify_md5_footer) {
+                Ok(_) => VerifyResult {
+                    file,
+                    ok: true,
+                    message: "MD5 verification successful".to_string(),
+                },
+                Err(e) => VerifyResult {
+                    file,
+                    ok: false,
+                    message: e.to_string(),
+                },
+            })
+            .collect())
+    })
+    .await
 }
 
 #[tauri::command]
