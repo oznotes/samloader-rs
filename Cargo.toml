@@ -4,6 +4,7 @@ members = [
     "fus",
     "pit",
     "odin",
+    "samloader-gui/src-tauri",
 ]
 resolver = "2"
 
