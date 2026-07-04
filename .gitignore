@@ -8,3 +8,4 @@ samloader-gui/src-tauri/gen/
 .DS_Store
 ._*
 *~
+/samloader_ui_work
