@@ -107,8 +107,8 @@ fn scan_tar_packages(
         }
         let file = match File::open(pkg) {
             Ok(f) => f,
-            Err(_) => {
-                print_error!("Failed to open package file \"{}\"", pkg);
+            Err(e) => {
+                print_error!("Failed to open package file \"{}\": {}", pkg, e);
                 return Err(1);
             }
         };
@@ -799,8 +799,8 @@ pub(crate) fn action_flash(
     if let Some(pit_path) = pit {
         let mut f = match File::open(pit_path) {
             Ok(file) => file,
-            Err(_) => {
-                print_error!("Failed to open explicit PIT file \"{}\"", pit_path);
+            Err(e) => {
+                print_error!("Failed to open explicit PIT file \"{}\": {}", pit_path, e);
                 return 1;
             }
         };
