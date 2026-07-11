@@ -53,6 +53,10 @@ button {
   --hint-size: 12px;
   --body-size: 13.5px;
   --title-size: 22px;
+  --focus-ring: color-mix(in oklab, var(--accent) 45%, transparent);
+  --scroll-thumb: color-mix(in oklab, var(--faint) 45%, transparent);
+  --warn-bg: color-mix(in oklab, var(--warn) 7%, var(--bg));
+  --danger-ink: #fff;
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -171,7 +175,7 @@ input,
 
 .brand {
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: var(--body-size);
   font-weight: 700;
 }
 
@@ -192,7 +196,7 @@ input,
 
 .tagline {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--hint-size);
 }
 
 .shell {
@@ -216,7 +220,7 @@ input,
 .field > span,
 .stat span {
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--label-size);
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -243,7 +247,7 @@ input,
   color: var(--text);
   background: transparent;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   cursor: pointer;
   text-align: left;
   font-size: 14px;
@@ -424,7 +428,7 @@ input,
   min-height: 0;
   overflow-y: auto;
   padding: var(--content-pad);
-  scrollbar-color: color-mix(in oklab, var(--faint) 45%, transparent) transparent;
+  scrollbar-color: var(--scroll-thumb) transparent;
   scrollbar-width: thin;
 }
 
@@ -635,7 +639,7 @@ input,
   margin-top: 8px;
   padding-right: 4px;
   overflow-y: auto;
-  scrollbar-color: color-mix(in oklab, var(--faint) 45%, transparent) transparent;
+  scrollbar-color: var(--scroll-thumb) transparent;
   scrollbar-width: thin;
 }
 
@@ -676,7 +680,7 @@ input {
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   outline: none;
   font-size: 14px;
   font-weight: 600;
@@ -702,14 +706,14 @@ input:focus {
   color: var(--dim);
   background: transparent;
   border: 1px solid var(--border-soft);
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   cursor: pointer;
 }
 
 .input-action button,
 .icon-button {
-  width: 42px;
-  flex: 0 0 42px;
+  width: var(--control-height);
+  flex: 0 0 var(--control-height);
 }
 
 .ghost {
@@ -750,7 +754,7 @@ input:focus {
   align-items: center;
   justify-content: center;
   gap: 9px;
-  min-height: 44px;
+  min-height: var(--button-height);
   padding: 0 22px;
   color: var(--accent-ink);
   background: var(--accent);
@@ -773,7 +777,7 @@ input:focus {
 
 .primary.danger,
 .danger {
-  color: #fff;
+  color: var(--danger-ink);
   background: var(--danger);
 }
 
@@ -856,7 +860,7 @@ input:focus {
 }
 
 .mini-segments button.danger {
-  color: #fff;
+  color: var(--danger-ink);
   background: var(--danger);
 }
 
@@ -960,14 +964,14 @@ input:focus {
   overflow: hidden;
   margin-top: 3px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--hint-size);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .slot strong {
-  font-size: 13.5px;
+  font-size: var(--body-size);
   line-height: 1.1;
   font-weight: 700;
 }
@@ -980,7 +984,7 @@ input:focus {
   border-radius: 8px;
   text-align: center;
   font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--hint-size);
   font-weight: 900;
 }
 
@@ -1064,7 +1068,7 @@ input:focus {
 
 .check-option strong {
   display: block;
-  font-size: 13.5px;
+  font-size: var(--body-size);
   line-height: 1.1;
   font-weight: 700;
 }
@@ -1164,7 +1168,7 @@ input:focus {
   padding: 9px 0;
   border-top: 1px solid var(--border-soft);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--hint-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1248,7 +1252,7 @@ input:focus {
 .pit-head th {
   color: var(--faint);
   background: var(--bg);
-  font-size: 11px;
+  font-size: var(--label-size);
   font-weight: 900;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1294,7 +1298,7 @@ input:focus {
 
 .dropzone span {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--hint-size);
 }
 
 .file-row {
@@ -1316,7 +1320,7 @@ input:focus {
 
 .file-row span {
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--hint-size);
 }
 
 .backend-list {
@@ -1418,7 +1422,7 @@ input:focus {
   color: var(--dim);
   font-size: 12.5px;
   white-space: nowrap;
-  scrollbar-color: color-mix(in oklab, var(--faint) 45%, transparent) transparent;
+  scrollbar-color: var(--scroll-thumb) transparent;
   scrollbar-width: thin;
 }
 
@@ -1500,7 +1504,7 @@ input:focus {
 
 .modal-list span {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--hint-size);
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -1549,7 +1553,7 @@ input:focus {
 }
 
 .flash-review .modal-list code {
-  font-size: 12px;
+  font-size: var(--hint-size);
   line-height: 1.35;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -1558,7 +1562,7 @@ input:focus {
 .flash-review .warning-row {
   margin-top: 8px;
   padding: 7px 9px;
-  font-size: 12px;
+  font-size: var(--hint-size);
 }
 
 .flash-acknowledge {
@@ -1678,7 +1682,7 @@ input:focus {
 }
 
 .firmware-search-grid .detect-android {
-  min-height: 44px;
+  min-height: var(--button-height);
   padding-inline: 16px;
   white-space: nowrap;
 }
@@ -1879,7 +1883,7 @@ input:focus {
 .beta-note {
   margin: 12px 20px 0;
   color: var(--dim);
-  background: color-mix(in oklab, var(--warn) 7%, var(--bg));
+  background: var(--warn-bg);
   border-color: color-mix(in oklab, var(--warn) 28%, var(--border-soft));
 }
 
@@ -1961,7 +1965,7 @@ input:focus {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--hint-size);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2012,6 +2016,10 @@ input:focus {
   bottom: 0;
   z-index: 4;
   box-shadow: 0 -12px 34px rgb(0 0 0 / 20%), var(--shadow);
+}
+
+.app[data-theme="light"] .download-card {
+  box-shadow: 0 -12px 34px rgb(20 22 30 / 10%), var(--shadow);
 }
 
 .download-head > .row {
@@ -2072,7 +2080,7 @@ input:focus {
   margin-top: 14px;
   padding: 13px;
   color: var(--dim);
-  background: color-mix(in oklab, var(--warn) 7%, var(--bg));
+  background: var(--warn-bg);
   border: 1px solid color-mix(in oklab, var(--warn) 35%, var(--border-soft));
   border-radius: 11px;
 }
@@ -2083,7 +2091,7 @@ input:focus {
 
 .conflict-box p {
   margin: 8px 0;
-  font-size: 12px;
+  font-size: var(--hint-size);
   line-height: 1.45;
 }
 
@@ -2258,9 +2266,10 @@ input:focus {
 
 button:focus-visible,
 input:focus-visible,
+a:focus-visible,
 summary:focus-visible,
 .command-bar code:focus-visible {
-  outline: 3px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
