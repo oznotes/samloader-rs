@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.0.3
+
+This release adds zero-extraction firmware flashing straight from the
+downloaded ZIP.
+
+- Flash firmware directly from the downloaded ZIP without extracting it (CLI:
+  samloader flash --zip; GUI: "Firmware ZIP" flash mode + "Flash this
+  firmware" after download). Compressed (non-STORE) archives fail closed with
+  an extract-and-use-folder-mode message.
+- Speeds up flash preflight by seeking past archive payloads instead of
+  reading them, and fails closed on ZIP members or tar entries whose declared
+  byte ranges extend past their container.
+- Defaults the post-download flash handoff to HOME_CSC (keep data) and
+  surfaces firmware package validation at review time in the desktop app.
+- Routes desktop styling through the design-token system, adds a consistent
+  keyboard focus ring, and fixes a light-theme shadow.
+
 ## 2.0.2
 
 This release hardens samloader for public desktop distribution.
@@ -20,7 +37,3 @@ This release hardens samloader for public desktop distribution.
   preferences, stale-state cleanup, and accessibility improvements.
 - Adds debug and release test gates, dependency audits, signed Windows release
   automation, checksums, security policy, and third-party notices.
-- Flash firmware directly from the downloaded ZIP without extracting it (CLI:
-  samloader flash --zip; GUI: "Firmware ZIP" flash mode + "Flash this
-  firmware" after download). Compressed (non-STORE) archives fail closed with
-  an extract-and-use-folder-mode message.
