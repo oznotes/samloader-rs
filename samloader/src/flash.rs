@@ -168,6 +168,14 @@ fn tar_sources_from_zip(
         return Err(1);
     }
 
+    let file_len = match file.metadata() {
+        Ok(metadata) => metadata.len(),
+        Err(e) => {
+            print_error!("Failed to inspect firmware ZIP \"{}\": {}", zip_path, e);
+            return Err(1);
+        }
+    };
+
     let mut member_names = Vec::new();
     selected.append_to(&mut member_names);
 
@@ -189,6 +197,19 @@ fn tar_sources_from_zip(
         if entry.size == 0 {
             print_error!("ZIP member \"{}\" is empty.", member);
             return Err(1);
+        }
+        // Fail closed if the central directory declares a byte range that runs
+        // off the end of the archive; mapping it would fault out of bounds
+        // (SIGBUS on non-Windows) during MD5 verification or the TAR walk.
+        match entry.data_start.checked_add(entry.size) {
+            Some(end) if end <= file_len => {}
+            _ => {
+                print_error!(
+                    "ZIP member \"{}\" declares a byte range beyond the end of the archive.",
+                    member
+                );
+                return Err(1);
+            }
         }
         sources.push(TarSource {
             display_name: format!("{member} (in {zip_path})"),
@@ -1720,6 +1741,42 @@ mod tests {
             .find(|e| e.normalized_name == "persist.img")
             .unwrap();
         assert_eq!(&persist.mmap[..], payload);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn zip_member_range_beyond_eof_fails_closed() {
+        let directory = temp_test_dir("zip-oob-range");
+        let zip_path = directory.join("firmware.zip");
+        let ap = tar_md5_bytes("AP_test.tar.md5", &[("persist.img", b"payload")]);
+        write_firmware_zip(
+            &zip_path,
+            &[("AP_test.tar.md5", &ap, zip::CompressionMethod::Stored)],
+        );
+
+        // Inflate the member's declared size in the central directory so its byte
+        // range runs past EOF. A plain end-truncation would instead destroy the
+        // central directory, so the ZIP would never parse far enough to reach the
+        // range check; this keeps the archive listable so the bounds check itself
+        // is what must reject it rather than mmapping out of bounds later.
+        let mut bytes = fs::read(&zip_path).unwrap();
+        let cd = bytes
+            .windows(4)
+            .position(|w| w == [0x50, 0x4b, 0x01, 0x02])
+            .expect("central directory header present");
+        let huge = u32::MAX.to_le_bytes();
+        bytes[cd + 20..cd + 24].copy_from_slice(&huge); // compressed size
+        bytes[cd + 24..cd + 28].copy_from_slice(&huge); // uncompressed size
+        fs::write(&zip_path, &bytes).unwrap();
+
+        // The crafted archive still lists cleanly, and the declared range now
+        // exceeds the file length — proving the range check (not a parse failure)
+        // is what rejects it.
+        let listed = list_firmware_zip_entries(&File::open(&zip_path).unwrap()).unwrap();
+        let file_len = fs::metadata(&zip_path).unwrap().len();
+        assert!(listed[0].data_start + listed[0].size > file_len);
+
+        assert!(tar_sources_from_zip(zip_path.to_str().unwrap(), "home").is_err());
         fs::remove_dir_all(directory).unwrap();
     }
 

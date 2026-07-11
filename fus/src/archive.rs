@@ -64,6 +64,10 @@ fn list_zip_entries_from_reader<R: Read + Seek>(reader: R) -> Result<Vec<Firmwar
             continue;
         }
         let name = entry.name().to_string();
+        // The `..` clause is a deliberate fail-closed over-approximation: it
+        // rejects any name containing two consecutive dots, not only true parent
+        // references. It can only reject more names, never accept a traversal,
+        // and real Samsung firmware members never contain `..`.
         if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains(':') {
             return Err(Error::Integrity {
                 message: format!("ZIP member {name:?} is not a flat file name."),

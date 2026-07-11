@@ -1545,6 +1545,11 @@ fn scan_zip_flash_plan(zip_path: &str, csc_mode: &str) -> Result<ZipFlashPlan, S
         ));
     }
 
+    let file_len = file
+        .metadata()
+        .map_err(|error| format!("Failed to inspect firmware ZIP \"{zip_path}\": {error}"))?
+        .len();
+
     let mut member_names = Vec::new();
     packages.append_to(&mut member_names);
 
@@ -1562,6 +1567,17 @@ fn scan_zip_flash_plan(zip_path: &str, csc_mode: &str) -> Result<ZipFlashPlan, S
         }
         if entry.size == 0 {
             return Err(format!("ZIP member \"{member}\" is empty."));
+        }
+        // Fail closed if the central directory declares a byte range that runs
+        // off the end of the archive; mapping it would fault out of bounds
+        // (SIGBUS on non-Windows) during MD5 verification or the TAR walk.
+        match entry.data_start.checked_add(entry.size) {
+            Some(end) if end <= file_len => {}
+            _ => {
+                return Err(format!(
+                    "ZIP member \"{member}\" declares a byte range beyond the end of the archive."
+                ));
+            }
         }
         sources.push(TarSource {
             display_name: format!("{member} (in {zip_path})"),
@@ -2370,6 +2386,10 @@ where
 fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
     let usb_backend = backend_from_str(&req.backend)?;
     let zip_source = req.zip.clone();
+    // Computed once from the reviewed ZIP below and reused for source scanning,
+    // so the reviewed plan (non_stored-empty, packages == req.packages) is the
+    // exact one that gets flashed — no second scan, no drop window.
+    let mut zip_plan_sources: Option<Vec<TarSource>> = None;
     let selected_packages = if let Some(zip_path) = zip_source.as_deref() {
         if req.folder.is_some() {
             return Err(
@@ -2393,6 +2413,7 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
                     .to_string(),
             );
         }
+        zip_plan_sources = Some(plan.sources);
         plan.packages
     } else if let Some(folder) = req.folder.as_deref() {
         if !req.packages.is_empty() {
@@ -2443,9 +2464,8 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
         pit_file_bytes = Some(buffer);
     }
 
-    let (resolved_entries, packaged_pit) = if let Some(zip_path) = zip_source.as_deref() {
-        let plan = scan_zip_flash_plan(zip_path, &req.csc_mode)?;
-        scan_tar_sources(&plan.sources, req.skip_md5, &app)?
+    let (resolved_entries, packaged_pit) = if let Some(sources) = zip_plan_sources {
+        scan_tar_sources(&sources, req.skip_md5, &app)?
     } else {
         scan_tar_packages(&packages, req.skip_md5, &app)?
     };
@@ -3083,6 +3103,7 @@ struct ZipScanResult {
 #[tauri::command]
 fn scan_firmware_zip(path: String, csc_mode: String) -> Result<ZipScanResult, String> {
     let plan = scan_zip_flash_plan(&path, &csc_mode)?;
+    validate_package_selection(&plan.packages, &csc_mode, false)?;
     let identity = file_identity(&path)?;
     Ok(ZipScanResult {
         packages: plan.packages,
@@ -4132,6 +4153,39 @@ mod tests {
             result.identity.size,
             std::fs::metadata(&zip_path).unwrap().len()
         );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn zip_member_range_beyond_eof_fails_closed() {
+        let directory = temp_test_dir("gui-zip-oob");
+        fs::create_dir_all(&directory).unwrap();
+        let zip_path = directory.join("firmware.zip");
+        let ap = tar_md5_bytes("AP_S931B_t.tar.md5", &[("persist.img", b"p")]);
+        write_firmware_zip(
+            &zip_path,
+            &[("AP_S931B_t.tar.md5", &ap, zip::CompressionMethod::Stored)],
+        );
+
+        // Inflate the member's declared size in the central directory so its byte
+        // range runs past EOF. A plain end-truncation would instead destroy the
+        // central directory, so the ZIP would never parse far enough to reach the
+        // range check; this keeps the archive listable so the bounds check itself
+        // is what must reject it rather than mmapping out of bounds later.
+        let mut bytes = fs::read(&zip_path).unwrap();
+        let cd = bytes
+            .windows(4)
+            .position(|w| w == [0x50, 0x4b, 0x01, 0x02])
+            .expect("central directory header present");
+        let huge = u32::MAX.to_le_bytes();
+        bytes[cd + 20..cd + 24].copy_from_slice(&huge); // compressed size
+        bytes[cd + 24..cd + 28].copy_from_slice(&huge); // uncompressed size
+        fs::write(&zip_path, &bytes).unwrap();
+
+        let Err(error) = scan_zip_flash_plan(zip_path.to_str().unwrap(), "home") else {
+            panic!("expected the scan to fail closed on an out-of-bounds member range");
+        };
+        assert!(error.contains("beyond the end of the archive"));
         std::fs::remove_dir_all(directory).unwrap();
     }
 
