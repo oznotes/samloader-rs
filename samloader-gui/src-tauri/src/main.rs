@@ -2403,7 +2403,7 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
         let plan = scan_zip_flash_plan(zip_path, &req.csc_mode)?;
         if !plan.non_stored.is_empty() {
             return Err(format!(
-                "{} is compressed inside the ZIP archive and cannot be flashed in place. Extract the ZIP and flash the extracted folder instead.",
+                "{} is compressed inside the ZIP archive and cannot be flashed in place. Extract the ZIP and use Firmware folder mode instead.",
                 plan.non_stored.join(", ")
             ));
         }

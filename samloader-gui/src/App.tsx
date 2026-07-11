@@ -730,7 +730,7 @@ export function App() {
 
   const title = {
     firmware: ["Firmware Explorer", "Find every known stable and beta build, then download it safely."],
-    flash: ["Flash firmware", "Write packages or an extracted folder to your device."],
+    flash: ["Flash firmware", "Write packages, an extracted folder, or a firmware ZIP to your device."],
     device: ["Device & PIT", "Detect the device, inspect PIT, or reboot to download mode."],
     verify: ["Verify MD5", "Check downloaded .tar.md5 package integrity."],
     settings: ["Settings", "USB backend, logging, and appearance."],
@@ -1411,7 +1411,8 @@ export function App() {
                         setView("flash");
                         switchFlashMode("zip");
                         setZipPath(path);
-                        void scanZip(path, cscMode);
+                        setCscMode("home");
+                        void scanZip(path, "home");
                       }}><Lightning weight="bold" /> Flash this firmware</button>}
                       {["done", "error", "cancelled"].includes(downloadState) && <button className="ghost" onClick={() => { setDownloadState("idle"); setDownloadEvent(null); setDownloadError(""); setDVersion(""); }}>Clear</button>}
                     </div>
@@ -1493,7 +1494,7 @@ export function App() {
                       </div>
                       {cscMode === "wipe" && <div className="warning-row"><Warning /> Regular CSC will factory reset the device.</div>}
                       {zipScan && zipScan.nonStored.length > 0 && (
-                        <div className="inline-error" role="alert"><WarningOctagon /> {zipScan.nonStored.join(", ")} is compressed inside this ZIP. Extract the ZIP and use the folder mode instead.</div>
+                        <div className="inline-error" role="alert"><WarningOctagon /> {zipScan.nonStored.join(", ")} is compressed inside this ZIP. Extract the ZIP and use Firmware folder mode instead.</div>
                       )}
                     </Card>
                   ) : (
@@ -1832,7 +1833,7 @@ export function flashReadinessMessage(
     if (scanning) return "Wait for the firmware ZIP scan to finish.";
     if (zipScan === null) return "Scan the ZIP to review its packages.";
     if (zipScan.nonStored.length > 0) {
-      return `${zipScan.nonStored.join(", ")} is compressed inside this ZIP. Extract the ZIP and use the folder mode instead.`;
+      return `${zipScan.nonStored.join(", ")} is compressed inside this ZIP. Extract the ZIP and use Firmware folder mode instead.`;
     }
   } else {
     if (scanning) return "Wait for the firmware folder scan to finish.";

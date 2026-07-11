@@ -186,5 +186,6 @@ describe("zip flash readiness", () => {
     );
     expect(message).toContain("compressed");
     expect(message.toLowerCase()).toContain("extract");
+    expect(message).toContain("Firmware folder mode instead");
   });
 });
