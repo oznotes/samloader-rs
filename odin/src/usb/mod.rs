@@ -221,21 +221,34 @@ pub fn create_backend(
 /// A missing device is reported as `Ok(false)`, while backend errors and
 /// ambiguous multi-device matches are returned to the caller.
 pub fn detect_device_checked(usb_backend: UsbBackendOption, wait: bool) -> Result<bool, OdinError> {
-    let result = match usb_backend {
-        #[cfg(feature = "serialport")]
-        UsbBackendOption::Vcom => SerialBackend::find_download_device(wait).map(|_| true),
-        #[cfg(feature = "nusb")]
-        UsbBackendOption::Nusb => NusbBackend::find_download_device(wait).map(|_| true),
-        #[cfg(feature = "rusb")]
-        UsbBackendOption::Libusb => RusbBackend::find_download_device(wait).map(|_| true),
-        #[cfg(any(feature = "mock", debug_assertions, test))]
-        UsbBackendOption::Mock => return Ok(true),
-    };
+    #[cfg(any(feature = "mock", debug_assertions, test))]
+    if matches!(usb_backend, UsbBackendOption::Mock) {
+        return Ok(true);
+    }
 
-    match result {
-        Ok(connected) => Ok(connected),
-        Err(OdinError::DeviceNotFound) => Ok(false),
-        Err(error) => Err(error),
+    let mut announced_wait = false;
+    loop {
+        let probe = create_backend(usb_backend, false, false).and_then(|usb| {
+            // VID/PID 04e8:685d is also exposed by some normal Samsung modem
+            // configurations. Only an Odin handshake proves Download Mode.
+            let mut manager = crate::odin::OdinManager::new(usb, false);
+            manager.init()
+        });
+        match probe {
+            Ok(()) => return Ok(true),
+            Err(OdinError::MultipleDevices(count)) => {
+                return Err(OdinError::MultipleDevices(count));
+            }
+            Err(OdinError::DeviceNotFound) if !wait => return Ok(false),
+            Err(error) if !wait => return Err(error),
+            Err(_) => {
+                if !announced_wait {
+                    println!("Waiting for a device that responds to the Odin protocol...");
+                    announced_wait = true;
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        }
     }
 }
 
