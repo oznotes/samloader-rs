@@ -269,7 +269,7 @@ fn scan_tar_sources(
         let pkg = &source.display_name;
         let source_file = Arc::clone(&source.file);
         let mut archive = Archive::new(Cursor::new(&region[..]));
-        let entries = match archive.entries() {
+        let entries = match archive.entries_with_seek() {
             Ok(e) => e,
             Err(e) => {
                 print_error!("Failed to read archive entries for \"{}\": {}", pkg, e);

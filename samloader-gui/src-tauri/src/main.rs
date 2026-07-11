@@ -1853,7 +1853,7 @@ fn scan_tar_sources(
         let source_file = Arc::clone(&source.file);
         let mut archive = Archive::new(Cursor::new(&region[..]));
         let entries = archive
-            .entries()
+            .entries_with_seek()
             .map_err(|e| format!("Failed to read archive entries for \"{pkg}\": {e}"))?;
 
         let mut package_entries = Vec::new();
