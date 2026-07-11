@@ -16,6 +16,7 @@ import {
   powerShellQuote,
   readPreferences,
   validatePreferences,
+  zipReviewValid,
 } from "./App";
 
 describe("download destination safety", () => {
@@ -151,5 +152,39 @@ describe("flash safety classification", () => {
       .toBe("Repartition requires regular CSC (factory reset); HOME_CSC cannot be used.");
     expect(flashReadinessMessage(4, false, false, false, false, []))
       .toBe("Connect a Download Mode device or enable Wait for device.");
+  });
+});
+
+describe("zip flash readiness", () => {
+  const scan = {
+    packages: { ap: "AP_x.tar.md5", csc: "HOME_CSC_x.tar.md5" },
+    identity: { path: "C:\\fw.zip", canonicalPath: "C:\\fw.zip", size: 10, modifiedUnixNanos: "1" },
+    nonStored: [] as string[],
+  };
+
+  it("requires a scanned ZIP with only stored members", () => {
+    expect(zipReviewValid("zip", null)).toBe(false);
+    expect(zipReviewValid("zip", scan)).toBe(true);
+    expect(zipReviewValid("zip", { ...scan, nonStored: ["AP_x.tar.md5"] })).toBe(false);
+    expect(zipReviewValid("folder", null)).toBe(true);
+    expect(zipReviewValid("pkg", null)).toBe(true);
+  });
+
+  it("prompts for a ZIP, then a scan, before it is ready", () => {
+    expect(flashReadinessMessage(0, false, true, false, false, [], true, true, "zip", false, null))
+      .toBe("Choose a firmware ZIP.");
+    expect(flashReadinessMessage(0, false, true, false, false, [], true, true, "zip", true, null))
+      .toBe("Scan the ZIP to review its packages.");
+    expect(flashReadinessMessage(2, false, true, false, false, [], true, true, "zip", true, scan))
+      .toBe("Ready to review flash.");
+  });
+
+  it("explains compressed members with an extract fallback", () => {
+    const message = flashReadinessMessage(
+      2, false, true, false, false, [], true, true,
+      "zip", true, { ...scan, nonStored: ["AP_x.tar.md5"] },
+    );
+    expect(message).toContain("compressed");
+    expect(message.toLowerCase()).toContain("extract");
   });
 });

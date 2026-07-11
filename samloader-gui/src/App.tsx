@@ -33,7 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type View = "firmware" | "flash" | "device" | "verify" | "settings";
 type Theme = "dark" | "light";
-type FlashMode = "pkg" | "folder";
+type FlashMode = "pkg" | "folder" | "zip";
 type CscMode = "home" | "wipe";
 type RunState = "idle" | "waiting" | "active" | "done" | "error";
 type DownloadState = "idle" | "preparing" | "downloading" | "paused" | "canceling" | "cancelled" | "done" | "error";
@@ -144,9 +144,11 @@ type FlashRequestPayload = {
   skipMd5: boolean;
   pit: null;
   folder: string | null;
+  zip: string | null;
   cscMode: CscMode;
   packages: FolderPackages;
   reviewedPackages: PackageIdentity[] | null;
+  reviewedZip: PackageIdentity | null;
 };
 
 type PackageIdentity = {
@@ -159,6 +161,12 @@ type PackageIdentity = {
 type FolderScanResult = {
   packages: FolderPackages;
   identities: PackageIdentity[];
+};
+
+export type ZipScanResult = {
+  packages: FolderPackages;
+  identity: PackageIdentity;
+  nonStored: string[];
 };
 
 type DeviceStatus = {
@@ -287,6 +295,14 @@ export const missingRepartitionSlots = (packages: FolderPackages) =>
 export const packagesForFlashRequest = (folderMode: boolean, packages: FolderPackages): FolderPackages =>
   folderMode ? {} : { ...packages };
 
+// Zip mode may only flash once the ZIP has been scanned and every firmware
+// member is STORED (uncompressed); compressed members cannot be flashed in
+// place. Non-zip modes are unaffected.
+export function zipReviewValid(mode: FlashMode, zipScan: ZipScanResult | null): boolean {
+  if (mode !== "zip") return true;
+  return zipScan !== null && zipScan.nonStored.length === 0;
+}
+
 export const isRegularCscPackage = (path?: string | null) => {
   if (!path) return false;
   const name = basename(path).toUpperCase();
@@ -400,6 +416,10 @@ export function App() {
   const [reviewedFolderPackages, setReviewedFolderPackages] = useState<PackageIdentity[]>([]);
   const [cscMode, setCscMode] = useState<CscMode>("home");
   const [packages, setPackages] = useState<FolderPackages>({});
+  const [zipPath, setZipPath] = useState("");
+  const [zipScan, setZipScan] = useState<ZipScanResult | null>(null);
+  const [zipScanBusy, setZipScanBusy] = useState(false);
+  const zipScanGeneration = useRef(0);
   const [flashOpts, setFlashOpts] = useState({
     noReboot: false,
     wait: false,
@@ -653,14 +673,18 @@ export function App() {
   const missingCorePackages = missingRepartitionSlots(packages);
   const unverifiedTarPackages = selectedPackages.filter((path) => path.toLowerCase().endsWith(".tar") && !path.toLowerCase().endsWith(".tar.md5"));
   const manualCscFactoryReset = flashMode === "pkg" && isRegularCscPackage(packages.csc);
-  const factoryReset = (flashMode === "folder" && cscMode === "wipe") || manualCscFactoryReset;
+  // Folder and zip modes both drive the CSC selection from the toggle, so a
+  // wipe toggle means a factory reset in either.
+  const factoryReset = (flashMode !== "pkg" && cscMode === "wipe") || manualCscFactoryReset;
   const repartitionHasWipeCsc = hasWipeCscForRepartition(flashMode === "folder", packages, cscMode);
   const destructive = flashOpts.repartition || factoryReset;
   const folderReviewValid = flashMode !== "folder" || reviewedFolderPackages.length === selectedPackages.length;
   const flashConfirmationValid = flashAcknowledged;
   const flashReady = selectedPackages.length > 0
     && !folderScanBusy
+    && !zipScanBusy
     && folderReviewValid
+    && zipReviewValid(flashMode, zipScan)
     && (!flashOpts.repartition || canRepartition(packages, flashMode === "folder", cscMode))
     && (deviceConnected || flashOpts.wait);
   const firmwareRows = useMemo<FirmwareRow[]>(() => {
@@ -694,12 +718,15 @@ export function App() {
       if (flashMode === "folder") {
         return `samloader${globals} flash${opts} --folder ${powerShellQuote(folder || "<folder>")}${cscModeCliFlag(true, packages.csc, cscMode)}`;
       }
+      if (flashMode === "zip") {
+        return `samloader${globals} flash${opts} --zip ${powerShellQuote(zipPath || "<firmware.zip>")}${cscModeCliFlag(true, packages.csc, cscMode)}`;
+      }
       return `samloader${globals} flash${opts}${cscModeCliFlag(false, packages.csc, cscMode)}${packages.bl ? ` -b ${powerShellQuote(packages.bl)}` : ""}${packages.ap ? ` -a ${powerShellQuote(packages.ap)}` : ""}${packages.cp ? ` -c ${powerShellQuote(packages.cp)}` : ""}${packages.csc ? ` -s ${powerShellQuote(packages.csc)}` : ""}${packages.userdata ? ` -u ${powerShellQuote(packages.userdata)}` : ""}`;
     }
     if (view === "device") return `samloader${globals} ${deviceCliSubcommand(pitRows.length > 0)}`;
     if (view === "verify") return `samloader verify-md5 ${verifyRows.map((row) => powerShellQuote(row.file)).join(" ") || powerShellQuote("<files>")}`;
     return `samloader${globals} --help`;
-  }, [appInfo.defaultDownloadDir, backend, connectionThreads, cscMode, dModel, dOut, dRegion, dVersion, flashMode, flashOpts, folder, packages, pitRows.length, verbose, verifyRows, view]);
+  }, [appInfo.defaultDownloadDir, backend, connectionThreads, cscMode, dModel, dOut, dRegion, dVersion, flashMode, flashOpts, folder, packages, pitRows.length, verbose, verifyRows, view, zipPath]);
 
   const title = {
     firmware: ["Firmware Explorer", "Find every known stable and beta build, then download it safely."],
@@ -785,6 +812,41 @@ export function App() {
     } finally {
       if (generation === folderScanGeneration.current) setFolderScanBusy(false);
     }
+  }
+
+  async function scanZip(path = zipPath, mode = cscMode) {
+    const target = path.trim();
+    if (!target) return;
+    const generation = ++zipScanGeneration.current;
+    setZipScanBusy(true);
+    setFlashError("");
+    try {
+      const result = await invoke<ZipScanResult>("scan_firmware_zip", { path: target, cscMode: mode });
+      if (generation !== zipScanGeneration.current) return;
+      setZipScan(result);
+      setPackages(result.packages);
+    } catch (error) {
+      if (generation !== zipScanGeneration.current) return;
+      setZipScan(null);
+      setPackages({});
+      setFlashError(errorMessage(error));
+    } finally {
+      if (generation === zipScanGeneration.current) setZipScanBusy(false);
+    }
+  }
+
+  // Switching flash mode cancels any in-flight scan and clears the reviewed
+  // package/zip state so a stale scan from another mode cannot leak into a flash.
+  function switchFlashMode(mode: FlashMode) {
+    folderScanGeneration.current += 1;
+    setFolderScanBusy(false);
+    zipScanGeneration.current += 1;
+    setZipScanBusy(false);
+    setFlashMode(mode);
+    setPackages({});
+    setReviewedFolderPackages([]);
+    setZipScan(null);
+    setFlashError("");
   }
 
   function editFirmwareIdentity(field: "model" | "region", value: string) {
@@ -1129,11 +1191,15 @@ export function App() {
       skipMd5: flashOpts.skipMd5,
       pit: null,
       folder: flashMode === "folder" ? folder : null,
-      cscMode: cscModeForFlashRequest(flashMode === "folder", packages.csc, cscMode),
-      // The backend re-scans folder mode immediately before flashing so the
-      // preview cannot become a second, stale package source of truth.
+      zip: flashMode === "zip" ? zipPath : null,
+      // Folder and zip modes drive the CSC selection from the toggle; only
+      // package mode derives it from the chosen CSC file name.
+      cscMode: cscModeForFlashRequest(flashMode !== "pkg", packages.csc, cscMode),
+      // The backend re-scans folder and zip modes immediately before flashing
+      // so the preview cannot become a second, stale package source of truth.
       packages: packagesForFlashRequest(flashMode === "folder", packages),
       reviewedPackages: flashMode === "folder" ? reviewedFolderPackages : null,
+      reviewedZip: flashMode === "zip" ? (zipScan?.identity ?? null) : null,
     };
     setFlashModal(false);
     setFlashAcknowledged(false);
@@ -1338,6 +1404,15 @@ export function App() {
                       {downloadState === "paused" && <button className="primary compact-button" disabled={downloadControlBusy} onClick={() => controlDownload("resume_download")}><Play /> Resume</button>}
                       {["downloading", "paused"].includes(downloadState) && <button className="ghost danger-outline" disabled={downloadControlBusy} onClick={() => controlDownload("cancel_download")}><X /> Cancel</button>}
                       {["error", "cancelled"].includes(downloadState) && lastFirmware && firmwareIdentityMatches(lastFirmware.model, lastFirmware.region, dModel, dRegion) && <button className="primary compact-button" onClick={() => prepareDownload(lastFirmware.row)}><ArrowsClockwise /> Retry</button>}
+                      {downloadState === "done" && downloadEvent?.path && <button className="primary compact-button" onClick={() => {
+                        // Capture the path before any state change; Clear wipes downloadEvent.
+                        const path = downloadEvent?.path;
+                        if (!path) return;
+                        setView("flash");
+                        switchFlashMode("zip");
+                        setZipPath(path);
+                        void scanZip(path, cscMode);
+                      }}><Lightning weight="bold" /> Flash this firmware</button>}
                       {["done", "error", "cancelled"].includes(downloadState) && <button className="ghost" onClick={() => { setDownloadState("idle"); setDownloadEvent(null); setDownloadError(""); setDVersion(""); }}>Clear</button>}
                     </div>
                   </Card>
@@ -1349,8 +1424,9 @@ export function App() {
               <div className="stack wide flash-stack">
                 <fieldset className="flash-config operation-fieldset" disabled={operationLocked}>
                   <div className="segments">
-                    <button className={flashMode === "pkg" ? "active" : ""} onClick={() => { folderScanGeneration.current += 1; setFolderScanBusy(false); setFlashMode("pkg"); setPackages({}); setReviewedFolderPackages([]); setFlashError(""); }}>Package files</button>
-                    <button className={flashMode === "folder" ? "active" : ""} onClick={() => { folderScanGeneration.current += 1; setFolderScanBusy(false); setFlashMode("folder"); setPackages({}); setReviewedFolderPackages([]); setFlashError(""); }}>Firmware folder</button>
+                    <button className={flashMode === "pkg" ? "active" : ""} onClick={() => switchFlashMode("pkg")}>Package files</button>
+                    <button className={flashMode === "folder" ? "active" : ""} onClick={() => switchFlashMode("folder")}>Firmware folder</button>
+                    <button className={flashMode === "zip" ? "active" : ""} onClick={() => switchFlashMode("zip")}>Firmware ZIP</button>
                   </div>
 
                   {flashMode === "folder" ? (
@@ -1384,6 +1460,41 @@ export function App() {
                         </div>
                       </div>
                       {cscMode === "wipe" && <div className="warning-row"><Warning /> Regular CSC will factory reset the device.</div>}
+                    </Card>
+                  ) : flashMode === "zip" ? (
+                    <Card className="flash-folder-card">
+                      <Field label="Firmware ZIP file">
+                        <div className="input-action">
+                          <input value={zipPath} onChange={(e) => { zipScanGeneration.current += 1; setZipScanBusy(false); setZipPath(e.target.value); setPackages({}); setZipScan(null); setFlashError(""); }} placeholder="D:\\...\\firmware.zip" />
+                          <button aria-label="Scan typed firmware ZIP" disabled={!zipPath.trim() || zipScanBusy} onClick={() => scanZip()}><MagnifyingGlass className={zipScanBusy ? "spin" : ""} /></button>
+                          <button aria-label="Choose firmware ZIP" disabled={zipScanBusy} onClick={async () => {
+                            setFlashError("");
+                            try {
+                              const selected = await open({ multiple: false, filters: [{ name: "Firmware ZIP", extensions: ["zip"] }] });
+                              if (typeof selected === "string") {
+                                setZipPath(selected);
+                                setPackages({});
+                                setZipScan(null);
+                                await scanZip(selected, cscMode);
+                              }
+                            } catch (error) {
+                              setFlashError(errorMessage(error));
+                            }
+                          }}><FileArchive /></button>
+                        </div>
+                      </Field>
+                      <p className="folder-help">Flashes STORED (uncompressed) BL / AP / CP / CSC / USERDATA packages directly from the ZIP without extracting it.</p>
+                      <div className="folder-line csc-row">
+                        <span className="csc-label">CSC package:</span>
+                        <div className="mini-segments">
+                          <button disabled={zipScanBusy} className={cscMode === "home" ? "active" : ""} onClick={async () => { setCscMode("home"); await scanZip(zipPath, "home"); }}>HOME_CSC · keep data</button>
+                          <button disabled={zipScanBusy} className={cscMode === "wipe" ? "active danger" : ""} onClick={async () => { setCscMode("wipe"); await scanZip(zipPath, "wipe"); }}>CSC · factory reset</button>
+                        </div>
+                      </div>
+                      {cscMode === "wipe" && <div className="warning-row"><Warning /> Regular CSC will factory reset the device.</div>}
+                      {zipScan && zipScan.nonStored.length > 0 && (
+                        <div className="inline-error" role="alert"><WarningOctagon /> {zipScan.nonStored.join(", ")} is compressed inside this ZIP. Extract the ZIP and use the folder mode instead.</div>
+                      )}
                     </Card>
                   ) : (
                     <Card className="package-slots-card">
@@ -1436,11 +1547,13 @@ export function App() {
                         <Usb />
                         {flashMode === "folder"
                           ? folderScanBusy ? "Scanning firmware folder" : selectedPackages.length ? `Folder scanned · ${selectedPackages.length} package${selectedPackages.length === 1 ? "" : "s"}` : folder ? "Scan the firmware folder" : "Select a firmware folder"
-                          : `${selectedPackages.length} package${selectedPackages.length === 1 ? "" : "s"} ready`}
+                          : flashMode === "zip"
+                            ? zipScanBusy ? "Scanning firmware ZIP" : selectedPackages.length ? `ZIP scanned · ${selectedPackages.length} package${selectedPackages.length === 1 ? "" : "s"}` : zipPath ? "Scan the firmware ZIP" : "Select a firmware ZIP"
+                            : `${selectedPackages.length} package${selectedPackages.length === 1 ? "" : "s"} ready`}
                         {" · "}
                         {deviceConnected ? "device in download mode" : flashOpts.wait ? "waiting is enabled" : "connect a device or enable Wait for device"}
                       </span>
-                      <button className={destructive ? "primary danger" : "primary"} disabled={!flashReady} title={!flashReady ? flashReadinessMessage(selectedPackages.length, folderScanBusy, deviceConnected, flashOpts.wait, flashOpts.repartition, missingCorePackages, repartitionHasWipeCsc, folderReviewValid) : undefined} onClick={() => { modalReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setFlashAcknowledged(false); setFlashModal(true); }}>
+                      <button className={destructive ? "primary danger" : "primary"} disabled={!flashReady} title={!flashReady ? flashReadinessMessage(selectedPackages.length, flashMode === "zip" ? zipScanBusy : folderScanBusy, deviceConnected, flashOpts.wait, flashOpts.repartition, missingCorePackages, repartitionHasWipeCsc, folderReviewValid, flashMode, Boolean(zipPath.trim()), zipScan) : undefined} onClick={() => { modalReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setFlashAcknowledged(false); setFlashModal(true); }}>
                         <Lightning weight="bold" /> Flash device
                       </button>
                     </div>
@@ -1601,8 +1714,8 @@ export function App() {
             </div>
             <p id="flash-review-description">Review every detail. Firmware for the wrong model, bootloader, or region can permanently damage the device.</p>
             <div className="modal-list">
-              <ModalItem label="Mode" value={flashMode === "folder" ? "Firmware folder" : "Package files"} />
-              <ModalItem label="CSC" value={flashMode === "folder" ? `${cscLabel(cscMode)} · ${cscMode === "wipe" ? "factory reset" : "keep data"}` : basename(packages.csc ?? "not selected")} />
+              <ModalItem label="Mode" value={flashMode === "folder" ? "Firmware folder" : flashMode === "zip" ? "Firmware ZIP" : "Package files"} />
+              <ModalItem label="CSC" value={flashMode === "pkg" ? basename(packages.csc ?? "not selected") : `${cscLabel(cscMode)} · ${cscMode === "wipe" ? "factory reset" : "keep data"}`} />
               <ModalItem label="Packages" value={selectedPackages.map(basename).join(", ")} />
               <ModalItem label="Integrity" value={unverifiedTarPackages.length > 0 ? `${unverifiedTarPackages.length} plain .tar package${unverifiedTarPackages.length === 1 ? "" : "s"} cannot be MD5-verified` : flashOpts.skipMd5 ? "MD5 verification disabled" : "MD5 footer verification enabled"} />
               <ModalItem label="Device" value={deviceConnected ? deviceMessage : flashOpts.wait ? "not connected · cancellable waiting enabled" : "disconnected · return and enable waiting"} />
@@ -1710,10 +1823,22 @@ export function flashReadinessMessage(
   missingSlots: readonly string[],
   repartitionHasWipeCsc = true,
   folderReviewValid = true,
+  mode: FlashMode = "folder",
+  zipChosen = false,
+  zipScan: ZipScanResult | null = null,
 ) {
-  if (scanning) return "Wait for the firmware folder scan to finish.";
-  if (selectedCount === 0) return "Select at least one firmware package.";
-  if (!folderReviewValid) return "Scan the firmware folder again before review.";
+  if (mode === "zip") {
+    if (!zipChosen) return "Choose a firmware ZIP.";
+    if (scanning) return "Wait for the firmware ZIP scan to finish.";
+    if (zipScan === null) return "Scan the ZIP to review its packages.";
+    if (zipScan.nonStored.length > 0) {
+      return `${zipScan.nonStored.join(", ")} is compressed inside this ZIP. Extract the ZIP and use the folder mode instead.`;
+    }
+  } else {
+    if (scanning) return "Wait for the firmware folder scan to finish.";
+    if (selectedCount === 0) return "Select at least one firmware package.";
+    if (!folderReviewValid) return "Scan the firmware folder again before review.";
+  }
   if (repartition && missingSlots.length > 0) return `Repartition requires ${missingSlots.map((slot) => slot.toUpperCase()).join(", ")}.`;
   if (repartition && !repartitionHasWipeCsc) return "Repartition requires regular CSC (factory reset); HOME_CSC cannot be used.";
   if (!connected && !waitEnabled) return "Connect a Download Mode device or enable Wait for device.";
