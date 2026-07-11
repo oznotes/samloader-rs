@@ -15,7 +15,7 @@
 //! Multi-threaded firmware download mechanism.
 
 use crate::FusClient;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use aes::cipher::BlockModeDecrypt;
 use aes::cipher::inout::InOutBuf;
 use memmap2::MmapMut;
@@ -40,7 +40,30 @@ pub trait DownloadProgress: Send + Sync {
 
     /// Prints a verbose log or status message (implementation decides if it is shown).
     fn println_verbose(&self, msg: String);
+
+    /// Returns whether the caller has requested cancellation.
+    ///
+    /// The default keeps existing progress implementations source-compatible.
+    /// Cancellation is cooperative: a worker already blocked in network I/O
+    /// may take up to the client's 30-second I/O timeout to observe it.
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+
+    /// Blocks while the caller has paused the download.
+    ///
+    /// Implementations should return when either the download resumes or is
+    /// cancelled; [`DownloadProgress::is_cancelled`] is checked immediately
+    /// after this hook returns. The default is a no-op.
+    fn wait_if_paused(&self) {}
 }
+
+/// Maximum number of parallel connections accepted by [`FusClient::download`].
+///
+/// Keeping this bounded prevents an accidental extreme worker count from
+/// creating millions of tiny ranges and exhausting memory before any download
+/// begins.
+pub const MAX_DOWNLOAD_THREADS: u64 = 64;
 
 // Convenient no-op implementation for silent downloads (e.g. in tests)
 impl DownloadProgress for () {
@@ -55,11 +78,21 @@ impl DownloadProgress for () {
 impl FusClient {
     /// Downloads the firmware binary in parallel across multiple threads, decrypting it in place,
     /// and writing to the file at `path`.
+    ///
+    /// `threads` must be between 1 and [`MAX_DOWNLOAD_THREADS`]. Cancellation
+    /// requested through [`DownloadProgress::is_cancelled`] is cooperative and
+    /// can wait for the current blocking network operation's 30-second timeout.
     pub fn download<P, PathRef>(&self, path: PathRef, threads: u64, progress: &P) -> Result<()>
     where
         P: DownloadProgress,
         PathRef: AsRef<Path>,
     {
+        validate_thread_count(threads)?;
+        validate_download_info(&self.info)?;
+        wait_until_active(progress)?;
+        self.init_download()?;
+        wait_until_active(progress)?;
+
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -72,10 +105,9 @@ impl FusClient {
 
         let mut map = unsafe { MmapMut::map_mut(&file)? };
 
-        self.init_download()?;
-
-        // Round up to the nearest 16 byte boundary
-        let chunk_size = (self.info.size / threads / 16 + 1) * 16;
+        // Split only on AES block boundaries. Metadata alignment was validated
+        // above, so this calculation cannot overflow even for very large files.
+        let chunk_size = (self.info.size / 16).div_ceil(threads) * 16;
 
         let mut queue = VecDeque::new();
         {
@@ -96,7 +128,9 @@ impl FusClient {
         }
 
         // Never spawn more connections than there are ranges to download.
-        let n_workers = queue.len().min(threads as usize);
+        let n_workers = queue
+            .len()
+            .min(usize::try_from(threads).unwrap_or(usize::MAX));
         let pool = Pool {
             inner: Mutex::new(PoolInner {
                 queue,
@@ -118,19 +152,32 @@ impl FusClient {
             }
         });
 
+        let pool_error = {
+            let mut state = pool.inner.lock().unwrap();
+            state.error.take()
+        };
+
         // The pool still borrows `map` through its (now-drained) work queue; drop it
         // before reading back from the mapping.
         drop(pool);
 
-        let last_byte = map.last().copied().unwrap_or(0);
+        // A worker may have cancelled or encountered a fatal stall after
+        // partially writing the mapping. Do not flush, inspect padding, or
+        // report success in that case.
+        if let Some(error) = pool_error {
+            drop(map);
+            return Err(error);
+        }
+
+        let unpadded_len = validate_pkcs7_padding(&map)?;
         map.flush()?;
         drop(map);
 
-        // Handle padding removal if needed
-        if last_byte > 0 && last_byte <= 16 {
-            let file_len = file.metadata().map(|m| m.len()).unwrap_or(self.info.size);
-            file.set_len(file_len - last_byte as u64)?;
-        }
+        file.set_len(
+            u64::try_from(unpadded_len).map_err(|_| Error::InvalidResponse {
+                message: "decrypted firmware length exceeded the supported file size".to_string(),
+            })?,
+        )?;
 
         Ok(())
     }
@@ -172,6 +219,10 @@ enum ChunkOutcome {
     /// The connection stalled. `decrypted` bytes (a multiple of 16) of the range
     /// are complete; everything after that still needs downloading.
     Stalled { decrypted: usize },
+    /// The caller requested cancellation.
+    Cancelled,
+    /// The server returned a response that cannot safely satisfy this range.
+    Failed(Error),
 }
 
 /// Consecutive *no-progress* attempts tolerated on a single connection before it
@@ -192,10 +243,19 @@ fn run_worker(pool: &Pool<'_>, client: &FusClient, progress: &impl DownloadProgr
     // For the final surviving connection only: how many times in a row the whole
     // download failed to advance. Lets us give up on a truly dead server instead
     // of spinning forever once we can no longer shed connections.
-    let mut last_progress = 0_u64;
     let mut dead_stalls = 0_u32;
 
     loop {
+        if wait_until_active(progress).is_err() {
+            let mut state = pool.inner.lock().unwrap();
+            if state.error.is_none() {
+                state.error = Some(Error::Cancelled);
+            }
+            state.live -= 1;
+            pool.available.notify_all();
+            return;
+        }
+
         // Take the next range, or wait until a throttled peer hands one back.
         // When the queue is empty and nothing is in flight, every byte is in.
         let chunk = {
@@ -279,20 +339,37 @@ fn run_worker(pool: &Pool<'_>, client: &FusClient, progress: &impl DownloadProgr
                 pool.available.notify_all();
                 drop(state);
 
-                let pos = progress.position();
-                if pos > last_progress {
-                    last_progress = pos;
-                    dead_stalls = 0;
-                } else {
-                    dead_stalls += 1;
-                    if dead_stalls > MAX_DEAD_STALLS {
-                        let mut state = pool.inner.lock().unwrap();
-                        state.error = Some(crate::Error::Stalled { offset: stall_off });
-                        state.live -= 1;
-                        pool.available.notify_all();
-                        return;
-                    }
+                // `decrypted` is the worker's actual progress in this cycle.
+                // Never use the consumer-facing progress reporter for liveness:
+                // valid implementations (including `()`) may not track a
+                // position at all.
+                if dead_stall_limit_reached(&mut dead_stalls, decrypted) {
+                    let mut state = pool.inner.lock().unwrap();
+                    state.error = Some(crate::Error::Stalled { offset: stall_off });
+                    state.live -= 1;
+                    pool.available.notify_all();
+                    return;
                 }
+            }
+            ChunkOutcome::Cancelled => {
+                let mut state = pool.inner.lock().unwrap();
+                state.in_flight -= 1;
+                state.live -= 1;
+                if state.error.is_none() {
+                    state.error = Some(Error::Cancelled);
+                }
+                pool.available.notify_all();
+                return;
+            }
+            ChunkOutcome::Failed(error) => {
+                let mut state = pool.inner.lock().unwrap();
+                state.in_flight -= 1;
+                state.live -= 1;
+                if state.error.is_none() {
+                    state.error = Some(error);
+                }
+                pool.available.notify_all();
+                return;
             }
         }
     }
@@ -312,9 +389,13 @@ fn download_chunk(
     let mut retries = 0_u32;
 
     loop {
-        let mut resp = match client.download_file(Some(start + dec_pos as u64), end) {
+        if wait_until_active(progress).is_err() {
+            return ChunkOutcome::Cancelled;
+        }
+
+        let mut resp = match client.download_file_checked(Some(start + dec_pos as u64), end) {
             Ok(resp) => resp,
-            Err(e) => {
+            Err(Error::Network(e)) => {
                 retries += 1;
                 if retries > MAX_STALL_RETRIES {
                     return ChunkOutcome::Stalled { decrypted: dec_pos };
@@ -323,9 +404,12 @@ fn download_chunk(
                     "Request error ({e}); retry {retries}/{MAX_STALL_RETRIES} at offset {}",
                     start + dec_pos as u64
                 ));
-                thread::sleep(backoff(retries));
+                if interruptible_sleep(backoff(retries), progress).is_err() {
+                    return ChunkOutcome::Cancelled;
+                }
                 continue;
             }
+            Err(error) => return ChunkOutcome::Failed(error),
         };
 
         // We re-requested from `dec_pos`; discard the undecrypted tail and resume
@@ -335,8 +419,13 @@ fn download_chunk(
         let mut dl_pos = dec_pos; // bytes received into `chunk` this connection
 
         let stall = loop {
+            if wait_until_active(progress).is_err() {
+                return ChunkOutcome::Cancelled;
+            }
+
             match resp.read(&mut chunk[dl_pos..]) {
-                Ok(0) => return ChunkOutcome::Done, // chunk fully received and decrypted
+                Ok(0) if dec_pos == chunk.len() => return ChunkOutcome::Done,
+                Ok(0) => break std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
                 Ok(n) => dl_pos += n,
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(e) => break e, // connection dropped: resume the outer loop
@@ -368,11 +457,238 @@ fn download_chunk(
              resuming at offset {}",
             start + dec_pos as u64
         ));
-        thread::sleep(backoff(retries));
+        if interruptible_sleep(backoff(retries), progress).is_err() {
+            return ChunkOutcome::Cancelled;
+        }
     }
+}
+
+/// Runs the caller's pause hook and then checks for cancellation.
+fn wait_until_active(progress: &impl DownloadProgress) -> Result<()> {
+    progress.wait_if_paused();
+    if progress.is_cancelled() {
+        Err(Error::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_thread_count(threads: u64) -> Result<()> {
+    if (1..=MAX_DOWNLOAD_THREADS).contains(&threads) {
+        Ok(())
+    } else {
+        Err(Error::InvalidThreadCount {
+            requested: threads,
+            max: MAX_DOWNLOAD_THREADS,
+        })
+    }
+}
+
+fn dead_stall_limit_reached(dead_stalls: &mut u32, decrypted: usize) -> bool {
+    if decrypted > 0 {
+        *dead_stalls = 0;
+        false
+    } else {
+        *dead_stalls = dead_stalls.saturating_add(1);
+        *dead_stalls > MAX_DEAD_STALLS
+    }
+}
+
+fn validate_download_info(info: &crate::BinaryInform) -> Result<()> {
+    if info.size == 0 {
+        return Err(Error::InvalidResponse {
+            message: "firmware metadata reported a zero-byte download".to_string(),
+        });
+    }
+    if info.key.len() != 16 {
+        return Err(Error::InvalidResponse {
+            message: format!(
+                "firmware metadata contained an invalid {}-byte decryption key",
+                info.key.len()
+            ),
+        });
+    }
+    if info.size % 16 != 0 {
+        return Err(Error::InvalidResponse {
+            message: format!(
+                "firmware metadata reported a {}-byte ciphertext that is not aligned to the 16-byte AES block size",
+                info.size
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn validate_pkcs7_padding(data: &[u8]) -> Result<usize> {
+    let padding_len = data.last().copied().ok_or_else(|| Error::InvalidResponse {
+        message: "decrypted firmware was empty and had no PKCS#7 padding".to_string(),
+    })? as usize;
+
+    if padding_len == 0 || padding_len > 16 || padding_len > data.len() {
+        return Err(Error::InvalidResponse {
+            message: "decrypted firmware contained invalid PKCS#7 padding".to_string(),
+        });
+    }
+
+    if !data[data.len() - padding_len..]
+        .iter()
+        .all(|byte| usize::from(*byte) == padding_len)
+    {
+        return Err(Error::InvalidResponse {
+            message: "decrypted firmware contained inconsistent PKCS#7 padding bytes".to_string(),
+        });
+    }
+
+    Ok(data.len() - padding_len)
+}
+
+/// Sleeps in short increments so cancellation remains responsive during retry
+/// backoff. Pause time is handled by the progress implementation.
+fn interruptible_sleep(duration: Duration, progress: &impl DownloadProgress) -> Result<()> {
+    let mut remaining = duration;
+    const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+    while !remaining.is_zero() {
+        wait_until_active(progress)?;
+        let interval = remaining.min(POLL_INTERVAL);
+        thread::sleep(interval);
+        remaining = remaining.saturating_sub(interval);
+    }
+
+    wait_until_active(progress)
 }
 
 /// Exponential backoff capped at 30s: 1s, 2s, 4s, 8s, 16s, 30s, ...
 fn backoff(attempt: u32) -> Duration {
-    Duration::from_secs((1u64 << (attempt - 1).min(5)).min(30))
+    Duration::from_secs((1u64 << attempt.saturating_sub(1).min(5)).min(30))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct LegacyProgress;
+
+    impl DownloadProgress for LegacyProgress {
+        fn inc(&self, _bytes: u64) {}
+
+        fn position(&self) -> u64 {
+            0
+        }
+
+        fn println(&self, _msg: String) {}
+
+        fn println_verbose(&self, _msg: String) {}
+    }
+
+    #[test]
+    fn control_hooks_are_backwards_compatible_defaults() {
+        let progress = LegacyProgress;
+
+        progress.wait_if_paused();
+        assert!(!progress.is_cancelled());
+        assert!(wait_until_active(&progress).is_ok());
+    }
+
+    struct CancelledProgress;
+
+    impl DownloadProgress for CancelledProgress {
+        fn inc(&self, _bytes: u64) {}
+
+        fn position(&self) -> u64 {
+            0
+        }
+
+        fn println(&self, _msg: String) {}
+
+        fn println_verbose(&self, _msg: String) {}
+
+        fn is_cancelled(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn cancellation_is_reported_by_control_checks() {
+        let error = wait_until_active(&CancelledProgress).unwrap_err();
+
+        assert!(matches!(error, Error::Cancelled));
+    }
+
+    #[test]
+    fn invalid_download_metadata_is_rejected_before_mapping() {
+        let mut info = crate::BinaryInform::default();
+        let error = validate_download_info(&info).unwrap_err();
+        assert!(matches!(error, Error::InvalidResponse { .. }));
+
+        info.size = 4096;
+        info.key = vec![0; 15];
+        let error = validate_download_info(&info).unwrap_err();
+        assert!(error.to_string().contains("15-byte decryption key"));
+
+        info.key.push(0);
+        assert!(validate_download_info(&info).is_ok());
+
+        info.size += 1;
+        assert!(validate_download_info(&info).is_err());
+    }
+
+    #[test]
+    fn download_thread_count_is_bounded() {
+        assert!(validate_thread_count(1).is_ok());
+        assert!(validate_thread_count(MAX_DOWNLOAD_THREADS).is_ok());
+
+        for requested in [0, MAX_DOWNLOAD_THREADS + 1, u64::MAX] {
+            let error = validate_thread_count(requested).unwrap_err();
+            assert!(matches!(
+                error,
+                Error::InvalidThreadCount {
+                    requested: actual,
+                    max: MAX_DOWNLOAD_THREADS,
+                } if actual == requested
+            ));
+        }
+    }
+
+    #[test]
+    fn actual_decryption_progress_resets_dead_stall_counter() {
+        let mut dead_stalls = MAX_DEAD_STALLS;
+        assert!(!dead_stall_limit_reached(&mut dead_stalls, 16));
+        assert_eq!(dead_stalls, 0);
+
+        for expected in 1..=MAX_DEAD_STALLS {
+            assert!(!dead_stall_limit_reached(&mut dead_stalls, 0));
+            assert_eq!(dead_stalls, expected);
+        }
+        assert!(dead_stall_limit_reached(&mut dead_stalls, 0));
+    }
+
+    #[test]
+    fn pkcs7_padding_is_validated_before_truncation() {
+        let mut one_byte_padding = vec![0x41; 15];
+        one_byte_padding.push(1);
+        assert_eq!(validate_pkcs7_padding(&one_byte_padding).unwrap(), 15);
+
+        let full_block_padding = vec![16; 16];
+        assert_eq!(validate_pkcs7_padding(&full_block_padding).unwrap(), 0);
+
+        for invalid in [
+            vec![],
+            vec![0; 16],
+            vec![17; 32],
+            vec![0x41, 0x42, 0x03, 0x03],
+            vec![0x41, 0x01, 0x02],
+        ] {
+            assert!(validate_pkcs7_padding(&invalid).is_err(), "{invalid:?}");
+        }
+    }
+
+    #[test]
+    fn retry_backoff_is_capped() {
+        assert_eq!(backoff(0), Duration::from_secs(1));
+        assert_eq!(backoff(1), Duration::from_secs(1));
+        assert_eq!(backoff(5), Duration::from_secs(16));
+        assert_eq!(backoff(6), Duration::from_secs(30));
+        assert_eq!(backoff(u32::MAX), Duration::from_secs(30));
+    }
 }

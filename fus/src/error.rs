@@ -27,6 +27,28 @@ pub enum Error {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
 
+    /// The FUS server returned a successful HTTP response that did not contain
+    /// the expected firmware metadata.
+    #[error("Invalid FUS response: {message}")]
+    InvalidResponse {
+        /// A description of the missing or malformed response data.
+        message: String,
+    },
+
+    /// The requested download was cancelled by the caller.
+    #[error("Download cancelled")]
+    Cancelled,
+
+    /// A parallel download was requested with a worker count outside the
+    /// library's supported range.
+    #[error("Download thread count must be between 1 and {max} (requested {requested})")]
+    InvalidThreadCount {
+        /// The worker count requested by the caller.
+        requested: u64,
+        /// The maximum worker count supported by the downloader.
+        max: u64,
+    },
+
     /// The download stalled completely because the server stopped responding.
     #[error("Download stalled at offset {offset}: server stopped responding")]
     Stalled {

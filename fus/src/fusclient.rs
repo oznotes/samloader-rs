@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{auth, xml};
+use crate::{Error, Result, auth, xml};
 use aes::cipher::KeyInit;
+use reqwest::StatusCode;
 use reqwest::blocking::{Client, Response};
-use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, RANGE, USER_AGENT};
+use reqwest::header::{AUTHORIZATION, CONTENT_RANGE, HeaderMap, HeaderValue, RANGE, USER_AGENT};
 use std::sync::Mutex;
 use std::time::Duration;
 use xml::{BinaryInform, VersionInfo};
@@ -76,6 +77,18 @@ impl FusClient {
 
     /// Queries the server for firmware binary metadata matching the requested model, region, and version.
     pub fn fetch_binary_info(&mut self, model: &str, region: &str, version: &str) {
+        self.try_fetch_binary_info(model, region, version)
+            .expect("Info request failed");
+    }
+
+    /// Queries the server for firmware binary metadata without panicking when
+    /// the request fails or the server returns invalid metadata.
+    pub fn try_fetch_binary_info(
+        &mut self,
+        model: &str,
+        region: &str,
+        version: &str,
+    ) -> Result<()> {
         let mut parts: Vec<&str> = version.split('/').collect();
         if parts.len() == 3 {
             parts.push(parts[0]);
@@ -90,10 +103,10 @@ impl FusClient {
                 self.make_headers(),
                 &req_xml,
             )
-            .and_then(Response::text)
-            .expect("Info request failed");
+            .and_then(Response::text)?;
 
-        self.info = BinaryInform::parse(&xml).expect("Info request invalid");
+        self.info = parse_binary_info_response(&xml, model, region, version)?;
+        Ok(())
     }
 
     fn make_headers(&self) -> HeaderMap {
@@ -157,14 +170,25 @@ impl FusClient {
 
     /// Fetches the historical list of released firmware versions for the target model and region.
     pub fn fetch_history(&self, model: &str, region: &str) -> reqwest::Result<VersionInfo> {
+        let xml = self.fetch_history_xml(model, region)?;
+        Ok(xml::parse_history_xml(&xml).expect("Failed to parse history.xml"))
+    }
+
+    /// Fetches firmware release history without panicking when the server
+    /// returns malformed XML or no matching firmware entries.
+    pub fn try_fetch_history(&self, model: &str, region: &str) -> Result<VersionInfo> {
+        let xml = self.fetch_history_xml(model, region)?;
+        parse_history_response(&xml, model, region)
+    }
+
+    fn fetch_history_xml(&self, model: &str, region: &str) -> reqwest::Result<String> {
         let req_xml = xml::history_req_xml(model, region);
         let resp = self.make_req(
             "SmartHistory.do",
             self.make_history_headers(model),
             &req_xml,
         )?;
-        let xml = resp.text()?;
-        Ok(xml::parse_history_xml(&xml).expect("Failed to parse history.xml"))
+        resp.text()
     }
 
     /// Requests a download authorization ticket from FUS for the currently selected firmware file.
@@ -203,6 +227,20 @@ impl FusClient {
             }
             other => other,
         }
+    }
+
+    /// Fetches a firmware byte range and validates that the server honored the
+    /// requested offsets before exposing the response body to the caller.
+    ///
+    /// This is the checked counterpart to [`FusClient::download_file`]. A
+    /// partial response must include an exact `Content-Range` matching the
+    /// requested start, end, and firmware size. A full `200 OK` response is
+    /// accepted only for a `0..EOF` request whose content length matches the
+    /// firmware metadata.
+    pub fn download_file_checked(&self, start: Option<u64>, end: Option<u64>) -> Result<Response> {
+        let response = self.download_file(start, end)?;
+        validate_download_response(&response, start, end, self.info.size)?;
+        Ok(response)
     }
 
     fn download_file_once(
@@ -265,5 +303,256 @@ impl FusClient {
     /// Instantiates and returns an AES-128-ECB decryptor initialized with the unique session decryption key.
     pub fn get_decryptor(&self) -> Aes128EcbDec {
         Aes128EcbDec::new_from_slice(self.info.key.as_slice()).unwrap()
+    }
+}
+
+fn parse_binary_info_response(
+    response: &str,
+    model: &str,
+    region: &str,
+    version: &str,
+) -> Result<BinaryInform> {
+    BinaryInform::parse(response).ok_or_else(|| Error::InvalidResponse {
+        message: format!(
+            "firmware metadata was missing or malformed for model {model}, region {region}, and version {version}"
+        ),
+    })
+}
+
+fn parse_history_response(response: &str, model: &str, region: &str) -> Result<VersionInfo> {
+    xml::parse_history_xml(response).ok_or_else(|| Error::InvalidResponse {
+        message: format!(
+            "firmware history was missing or malformed for model {model} and region {region}"
+        ),
+    })
+}
+
+fn validate_download_response(
+    response: &Response,
+    start: Option<u64>,
+    end: Option<u64>,
+    total: u64,
+) -> Result<()> {
+    let content_range = response
+        .headers()
+        .get(CONTENT_RANGE)
+        .and_then(|value| value.to_str().ok());
+    validate_download_response_parts(
+        response.status(),
+        content_range,
+        response.content_length(),
+        start,
+        end,
+        total,
+    )
+}
+
+fn validate_download_response_parts(
+    status: StatusCode,
+    content_range: Option<&str>,
+    content_length: Option<u64>,
+    start: Option<u64>,
+    end: Option<u64>,
+    total: u64,
+) -> Result<()> {
+    if total == 0 {
+        return Err(invalid_download_response(
+            "firmware metadata reported a zero-byte download",
+        ));
+    }
+
+    let expected_start = start.unwrap_or(0);
+    let expected_end = end.unwrap_or(total - 1);
+    if expected_start > expected_end || expected_end >= total {
+        return Err(invalid_download_response(format!(
+            "requested byte range {expected_start}-{expected_end} is outside the {total}-byte firmware"
+        )));
+    }
+
+    if status == StatusCode::PARTIAL_CONTENT {
+        let value = content_range.ok_or_else(|| {
+            invalid_download_response("partial response omitted the Content-Range header")
+        })?;
+        let (actual_start, actual_end, actual_total) =
+            parse_content_range(value).ok_or_else(|| {
+                invalid_download_response(format!("malformed Content-Range header: {value:?}"))
+            })?;
+        if (actual_start, actual_end, actual_total) != (expected_start, expected_end, total) {
+            return Err(invalid_download_response(format!(
+                "server returned byte range {actual_start}-{actual_end}/{actual_total}, expected {expected_start}-{expected_end}/{total}"
+            )));
+        }
+
+        let expected_length = expected_end - expected_start + 1;
+        if let Some(actual_length) = content_length
+            && actual_length != expected_length
+        {
+            return Err(invalid_download_response(format!(
+                "partial response reported {actual_length} bytes, expected {expected_length}"
+            )));
+        }
+        return Ok(());
+    }
+
+    if status == StatusCode::OK && expected_start == 0 && end.is_none() {
+        if content_length == Some(total) {
+            return Ok(());
+        }
+        return Err(invalid_download_response(format!(
+            "full response length was {:?}, expected {total}",
+            content_length
+        )));
+    }
+
+    Err(invalid_download_response(format!(
+        "server returned HTTP {status} for byte range {expected_start}-{expected_end}/{total}"
+    )))
+}
+
+fn parse_content_range(value: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = value.split_whitespace();
+    let unit = parts.next()?;
+    let range_and_total = parts.next()?;
+    if !unit.eq_ignore_ascii_case("bytes") || parts.next().is_some() {
+        return None;
+    }
+
+    let (range, total) = range_and_total.split_once('/')?;
+    let (start, end) = range.split_once('-')?;
+    let start = start.parse().ok()?;
+    let end = end.parse().ok()?;
+    let total = total.parse().ok()?;
+    if start > end || end >= total {
+        return None;
+    }
+    Some((start, end, total))
+}
+
+fn invalid_download_response(message: impl Into<String>) -> Error {
+    Error::InvalidResponse {
+        message: message.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn binary_info_parser_reports_invalid_response() {
+        let error = match parse_binary_info_response(
+            "<FUSMsg><FUSBody><Results><Status>500</Status></Results></FUSBody></FUSMsg>",
+            "SM-S931U1",
+            "XAA",
+            "BAD",
+        ) {
+            Ok(_) => panic!("invalid response unexpectedly parsed"),
+            Err(error) => error,
+        };
+
+        assert!(matches!(error, Error::InvalidResponse { .. }));
+        assert!(error.to_string().contains("SM-S931U1"));
+        assert!(error.to_string().contains("XAA"));
+    }
+
+    #[test]
+    fn binary_info_parser_accepts_complete_metadata() {
+        let response = r#"
+            <FUSMsg>
+              <FUSBody>
+                <Results><Status>200</Status></Results>
+                <BINARY_SW_VERSION><Data>AAAA/BBBB/CCCC/DDDD</Data></BINARY_SW_VERSION>
+                <LOGIC_VALUE_FACTORY><Data>0123456789abcdef</Data></LOGIC_VALUE_FACTORY>
+                <BINARY_NAME><Data>firmware.zip.enc4</Data></BINARY_NAME>
+                <MODEL_PATH><Data>/path/</Data></MODEL_PATH>
+                <BINARY_BYTE_SIZE><Data>4096</Data></BINARY_BYTE_SIZE>
+                <DEVICE_MODEL_TYPE><Data>MODEL</Data></DEVICE_MODEL_TYPE>
+                <BINARY_LOCAL_CODE><Data>XAA</Data></BINARY_LOCAL_CODE>
+              </FUSBody>
+            </FUSMsg>
+        "#;
+
+        let info = parse_binary_info_response(response, "SM-S931U1", "XAA", "AAAA").unwrap();
+
+        assert_eq!(info.filename, "firmware.zip.enc4");
+        assert_eq!(info.size, 4096);
+        assert_eq!(info.key.len(), 16);
+    }
+
+    #[test]
+    fn history_parser_reports_invalid_response() {
+        let error = match parse_history_response("not XML", "SM-S931U1", "XAA") {
+            Ok(_) => panic!("invalid response unexpectedly parsed"),
+            Err(error) => error,
+        };
+
+        assert!(matches!(error, Error::InvalidResponse { .. }));
+        assert!(error.to_string().contains("firmware history"));
+    }
+
+    #[test]
+    fn content_range_parser_accepts_complete_byte_ranges() {
+        assert_eq!(parse_content_range("bytes 16-31/64"), Some((16, 31, 64)));
+        assert_eq!(
+            parse_content_range("BYTES 0-4095/4096"),
+            Some((0, 4095, 4096))
+        );
+    }
+
+    #[test]
+    fn content_range_parser_rejects_invalid_or_unsatisfied_ranges() {
+        assert_eq!(parse_content_range("bytes */64"), None);
+        assert_eq!(parse_content_range("bytes 32-16/64"), None);
+        assert_eq!(parse_content_range("bytes 0-64/64"), None);
+        assert_eq!(parse_content_range("items 0-15/64"), None);
+        assert_eq!(parse_content_range("bytes 0-15/*"), None);
+    }
+
+    #[test]
+    fn checked_partial_response_requires_exact_range_metadata() {
+        assert!(
+            validate_download_response_parts(
+                StatusCode::PARTIAL_CONTENT,
+                Some("bytes 16-31/64"),
+                Some(16),
+                Some(16),
+                Some(31),
+                64,
+            )
+            .is_ok()
+        );
+
+        for value in ["bytes 0-15/64", "bytes 16-30/64", "bytes 16-31/65"] {
+            let error = validate_download_response_parts(
+                StatusCode::PARTIAL_CONTENT,
+                Some(value),
+                Some(16),
+                Some(16),
+                Some(31),
+                64,
+            )
+            .unwrap_err();
+            assert!(matches!(error, Error::InvalidResponse { .. }));
+        }
+    }
+
+    #[test]
+    fn full_response_is_only_valid_for_exact_zero_to_eof_request() {
+        assert!(
+            validate_download_response_parts(StatusCode::OK, None, Some(64), Some(0), None, 64,)
+                .is_ok()
+        );
+
+        for (start, end, length) in [
+            (Some(16), None, Some(64)),
+            (Some(0), Some(63), Some(64)),
+            (Some(0), None, Some(63)),
+            (Some(0), None, None),
+        ] {
+            assert!(
+                validate_download_response_parts(StatusCode::OK, None, length, start, end, 64,)
+                    .is_err()
+            );
+        }
     }
 }
