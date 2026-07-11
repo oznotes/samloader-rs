@@ -1413,8 +1413,22 @@ input:focus {
   .nav-label,
   .nav-button span,
   .device-card,
-  .sidebar-actions .stretch,
   .tagline {
+    display: none;
+  }
+
+  .sidebar-actions {
+    flex-direction: column;
+  }
+
+  .sidebar-actions .stretch,
+  .sidebar-actions .icon-button {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .sidebar-actions .stretch span {
     display: none;
   }
 
@@ -1429,5 +1443,637 @@ input:focus {
   .update-grid,
   .action-cards {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Firmware Explorer */
+.firmware-stack {
+  gap: 14px;
+}
+
+.firmware-search-card {
+  padding-bottom: 20px;
+}
+
+.firmware-search-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+}
+
+.firmware-search-grid .detect-android {
+  min-height: 44px;
+  padding-inline: 16px;
+  white-space: nowrap;
+}
+
+.field-help-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(320px, 2fr);
+  gap: 14px;
+  margin-top: 8px;
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.field-help-row strong {
+  color: var(--dim);
+}
+
+.inline-info,
+.inline-error,
+.beta-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.inline-info {
+  color: var(--dim);
+  background: color-mix(in oklab, var(--ok) 8%, var(--bg));
+  border-color: color-mix(in oklab, var(--ok) 34%, var(--border-soft));
+}
+
+.inline-info svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--ok);
+}
+
+.inline-info code {
+  margin-left: auto;
+  color: var(--faint);
+}
+
+.inline-error {
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger-bg) 55%, var(--bg));
+  border-color: color-mix(in oklab, var(--danger) 48%, var(--border-soft));
+  font-weight: 650;
+}
+
+.inline-error svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
+.download-options {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.4fr) minmax(160px, 0.8fr) auto;
+  align-items: end;
+  gap: 18px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.threads-control {
+  min-width: 0;
+  padding-bottom: 4px;
+}
+
+.threads-control .range {
+  margin-top: 8px;
+}
+
+.threads-control small {
+  display: block;
+  margin-top: 7px;
+  color: var(--faint);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.connection-choice {
+  display: flex;
+  gap: 3px;
+  margin-top: 7px;
+  padding: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+}
+
+.connection-choice button {
+  flex: 1;
+  min-height: 27px;
+  color: var(--dim);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.connection-choice button.active {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.search-button {
+  min-width: 176px;
+}
+
+.firmware-results-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.firmware-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.firmware-results-head > div:first-child > strong {
+  font-size: 15px;
+}
+
+.firmware-result-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.version-search {
+  min-width: 170px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 9px;
+  background: var(--bg);
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+}
+
+.version-search svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--faint);
+}
+
+.version-search input {
+  min-height: 38px;
+  padding: 0 9px 0 0;
+  background: transparent;
+  border: 0;
+  font-size: 11.5px;
+}
+
+.filter-segments {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+}
+
+.filter-segments button {
+  min-height: 32px;
+  padding: 0 13px;
+  color: var(--dim);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.filter-segments button.active {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.beta-note {
+  margin: 12px 20px 0;
+  color: var(--dim);
+  background: color-mix(in oklab, var(--warn) 7%, var(--bg));
+  border-color: color-mix(in oklab, var(--warn) 28%, var(--border-soft));
+}
+
+.beta-note svg {
+  flex: 0 0 auto;
+  color: var(--warn);
+}
+
+.firmware-table {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.firmware-table-head,
+.firmware-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.7fr) 126px minmax(150px, 0.8fr) 112px;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 20px;
+}
+
+.firmware-table-head {
+  color: var(--faint);
+  background: var(--bg);
+  border-block: 1px solid var(--border-soft);
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.firmware-row {
+  min-height: 58px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.firmware-row:last-child {
+  border-bottom: 0;
+}
+
+.firmware-row:hover {
+  background: color-mix(in oklab, var(--accent) 4%, transparent);
+}
+
+.firmware-row > code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.firmware-badge {
+  width: fit-content;
+  padding: 5px 8px;
+  color: var(--dim);
+  background: var(--surface2);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 850;
+  text-transform: capitalize;
+}
+
+.firmware-badge.latest {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface2));
+  border-color: color-mix(in oklab, var(--accent) 32%, var(--border-soft));
+}
+
+.firmware-badge.beta {
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 8%, var(--surface2));
+  border-color: color-mix(in oklab, var(--warn) 30%, var(--border-soft));
+}
+
+.availability {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.firmware-row .ghost {
+  min-height: 34px;
+  padding: 0 11px;
+}
+
+.empty-state {
+  padding: 32px 20px;
+  color: var(--faint);
+  text-align: center;
+}
+
+.download-card {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  box-shadow: 0 -12px 34px rgb(0 0 0 / 20%), var(--shadow);
+}
+
+.download-head > .row {
+  min-width: 0;
+}
+
+.download-head > .row > div {
+  min-width: 0;
+}
+
+.download-head code,
+.download-head p {
+  display: block;
+  max-width: min(620px, 60vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-stats {
+  grid-template-columns: repeat(4, minmax(95px, 1fr)) minmax(130px, 1.4fr);
+}
+
+.download-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.compact-button {
+  min-height: 38px;
+  padding-inline: 15px;
+  font-size: 13px;
+}
+
+.danger-outline {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 45%, var(--border));
+}
+
+.danger-outline:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.download-review {
+  width: min(620px, 100%);
+  max-height: min(760px, calc(100vh - 32px));
+  overflow-y: auto;
+}
+
+.download-review .modal-list div {
+  grid-template-columns: 100px minmax(0, 1fr);
+}
+
+.conflict-box {
+  margin-top: 14px;
+  padding: 13px;
+  color: var(--dim);
+  background: color-mix(in oklab, var(--warn) 7%, var(--bg));
+  border: 1px solid color-mix(in oklab, var(--warn) 35%, var(--border-soft));
+  border-radius: 11px;
+}
+
+.conflict-box > .row {
+  color: var(--warn);
+}
+
+.conflict-box p {
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.conflict-box p code {
+  overflow-wrap: anywhere;
+}
+
+.replace-confirm {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 11px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.replace-confirm input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.slot-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.slot-wrap .slot {
+  width: 100%;
+  height: 100%;
+  padding-right: 46px;
+}
+
+.slot-remove,
+.row-remove {
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.slot-remove {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  transform: translateY(-50%);
+}
+
+.slot-remove:hover,
+.row-remove:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: color-mix(in oklab, var(--danger) 35%, transparent);
+}
+
+.slot-remove svg,
+.row-remove svg {
+  width: 16px;
+  height: 16px;
+}
+
+.advanced-options {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.advanced-options summary {
+  width: fit-content;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.advanced-options > p {
+  margin: 7px 0 12px;
+  font-size: 11.5px;
+}
+
+.settings-help {
+  margin-top: 7px !important;
+}
+
+.recommended {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  border-radius: 999px;
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.file-row {
+  grid-template-columns: 24px minmax(0, 1fr) minmax(120px, auto) 32px;
+}
+
+.file-row.file-error {
+  border-color: color-mix(in oklab, var(--danger) 45%, var(--border));
+}
+
+.file-row.file-error > svg,
+.file-row.file-error > span {
+  color: var(--danger);
+}
+
+.row-remove {
+  width: 30px;
+  height: 30px;
+}
+
+button:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.modal-backdrop {
+  z-index: 50;
+}
+
+@media (max-width: 1120px) {
+  .firmware-table-head,
+  .firmware-row {
+    grid-template-columns: minmax(210px, 1.6fr) 112px 112px;
+  }
+
+  .firmware-table-head > span:nth-child(3),
+  .firmware-row .availability {
+    display: none;
+  }
+
+  .download-stats {
+    grid-template-columns: repeat(4, minmax(90px, 1fr));
+  }
+
+  .download-stats .stat:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 820px) {
+  .header {
+    padding-inline: 20px;
+  }
+
+  .content {
+    padding: 18px 20px 22px;
+  }
+
+  .firmware-search-grid,
+  .download-options,
+  .field-help-row {
+    grid-template-columns: 1fr;
+  }
+
+  .firmware-search-grid .detect-android,
+  .search-button {
+    width: 100%;
+  }
+
+  .field-help-row span:first-child {
+    display: none;
+  }
+
+  .firmware-results-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .firmware-result-tools {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .version-search,
+  .filter-segments {
+    width: 100%;
+  }
+
+  .filter-segments button {
+    flex: 1;
+  }
+
+  .firmware-table-head {
+    display: none;
+  }
+
+  .firmware-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    padding-block: 13px;
+  }
+
+  .firmware-row > code {
+    grid-column: 1 / -1;
+  }
+
+  .firmware-row .ghost {
+    justify-self: end;
+  }
+
+  .download-card {
+    position: static;
+  }
+
+  .download-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .download-stats .stat:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .download-head code,
+  .download-head p {
+    max-width: 48vw;
   }
 }
