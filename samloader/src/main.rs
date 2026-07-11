@@ -129,6 +129,7 @@ const SKIP_SIZE_CHECK_HELP: &str = "Do not verify that files fit in the specifie
 const PIT_HELP: &str = "The PIT file to use with --repartition";
 const SKIP_MD5_HELP: &str = "Skip MD5 checksum verification";
 const FOLDER_HELP: &str = "Folder containing BL/AP/CP/CSC/USERDATA tar package files";
+const ZIP_HELP: &str = "Flash directly from a firmware ZIP archive without extracting it";
 const CSC_MODE_HELP: &str =
     "CSC safety mode: home requires HOME_CSC; wipe selects/requires regular CSC and factory-resets";
 const BL_HELP: &str = "BL tar package file";
@@ -748,8 +749,9 @@ fn main() {
                 .arg(
                     Arg::new("zip")
                         .long("zip")
+                        .num_args(1)
                         .value_name("FILE")
-                        .help("Flash directly from a firmware ZIP archive without extracting it")
+                        .help(ZIP_HELP)
                         .conflicts_with_all(["folder", "bl", "ap", "cp", "csc", "userdata"]),
                 )
                 .arg(
@@ -1000,7 +1002,7 @@ fn main() {
                 }
             }
 
-            if packages.is_empty() && partitions.is_empty() {
+            if zip.is_none() && packages.is_empty() && partitions.is_empty() {
                 print_error!("No packages, files, or partitions specified for flashing.");
                 std::process::exit(1);
             }
