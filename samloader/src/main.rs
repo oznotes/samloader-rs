@@ -746,6 +746,13 @@ fn main() {
                         .help(FOLDER_HELP),
                 )
                 .arg(
+                    Arg::new("zip")
+                        .long("zip")
+                        .value_name("FILE")
+                        .help("Flash directly from a firmware ZIP archive without extracting it")
+                        .conflicts_with_all(["folder", "bl", "ap", "cp", "csc", "userdata"]),
+                )
+                .arg(
                     Arg::new("csc-mode")
                         .long("csc-mode")
                         .num_args(1)
@@ -926,22 +933,33 @@ fn main() {
                 .get_one::<String>("csc-mode")
                 .map(|s| s.as_str())
                 .unwrap_or("home");
-            let explicit_packages = FolderPackages {
-                bl: sub_matches.get_one::<String>("bl").cloned(),
-                ap: sub_matches.get_one::<String>("ap").cloned(),
-                cp: sub_matches.get_one::<String>("cp").cloned(),
-                csc: sub_matches.get_one::<String>("csc").cloned(),
-                userdata: sub_matches.get_one::<String>("userdata").cloned(),
-            };
-            let packages = match resolve_package_selection(
-                sub_matches.get_one::<String>("folder").map(String::as_str),
-                csc_mode,
-                explicit_packages,
-            ) {
-                Ok(packages) => packages,
-                Err(e) => {
-                    print_error!("{}", e);
-                    std::process::exit(1);
+            let zip = sub_matches.get_one::<String>("zip").map(String::as_str);
+            if let Some(zip_path) = zip
+                && !Path::new(zip_path).exists()
+            {
+                print_error!("Firmware ZIP \"{}\" does not exist.", zip_path);
+                std::process::exit(1);
+            }
+            let packages = if zip.is_some() {
+                FolderPackages::default()
+            } else {
+                let explicit_packages = FolderPackages {
+                    bl: sub_matches.get_one::<String>("bl").cloned(),
+                    ap: sub_matches.get_one::<String>("ap").cloned(),
+                    cp: sub_matches.get_one::<String>("cp").cloned(),
+                    csc: sub_matches.get_one::<String>("csc").cloned(),
+                    userdata: sub_matches.get_one::<String>("userdata").cloned(),
+                };
+                match resolve_package_selection(
+                    sub_matches.get_one::<String>("folder").map(String::as_str),
+                    csc_mode,
+                    explicit_packages,
+                ) {
+                    Ok(packages) => packages,
+                    Err(e) => {
+                        print_error!("{}", e);
+                        std::process::exit(1);
+                    }
                 }
             };
             let mut package_files = Vec::new();
@@ -1002,7 +1020,7 @@ fn main() {
                 sub_matches.get_flag("skip-size-check"),
                 sub_matches.get_flag("skip-md5"),
                 pit,
-                None,
+                zip,
                 csc_mode,
                 &packages,
                 &partitions,
