@@ -3876,6 +3876,7 @@ version = "2.0.2"
 dependencies = [
  "cfg-if",
  "clap",
+ "fast-md5",
  "indicatif",
  "libc",
  "memmap2",
@@ -3883,6 +3884,7 @@ dependencies = [
  "samloader-odin",
  "samloader-pit",
  "tar",
+ "zip",
 ]
 
 [[package]]

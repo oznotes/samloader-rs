@@ -14,8 +14,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{FolderPackages, PartitionArg, print_error, validate_package_selection};
+use crate::{
+    FolderPackages, PartitionArg, print_error, select_zip_packages, validate_package_selection,
+};
 use memmap2::{Mmap, MmapOptions};
+use samloader_fus::list_firmware_zip_entries;
 use samloader_odin::{
     FirmwareFile, FirmwareInfo, FirmwareLz4File, Lz4FrameHeader, OdinManager, UsbBackendOption,
     create_backend, validate_firmware_plan, verify_md5_footer,
@@ -128,6 +131,74 @@ fn tar_sources_from_paths(packages: &[String]) -> Result<Vec<TarSource>, i32> {
         });
     }
     Ok(sources)
+}
+
+fn tar_sources_from_zip(
+    zip_path: &str,
+    csc_mode: &str,
+) -> Result<(Vec<TarSource>, FolderPackages), i32> {
+    let file = match File::open(zip_path) {
+        Ok(f) => f,
+        Err(e) => {
+            print_error!("Failed to open firmware ZIP \"{}\": {}", zip_path, e);
+            return Err(1);
+        }
+    };
+    let entries = match list_firmware_zip_entries(&file) {
+        Ok(entries) => entries,
+        Err(error) => {
+            print_error!("{}", error);
+            return Err(1);
+        }
+    };
+
+    let names: Vec<String> = entries.iter().map(|entry| entry.name.clone()).collect();
+    let selected = match select_zip_packages(&names, csc_mode) {
+        Ok(selected) => selected,
+        Err(error) => {
+            print_error!("{}", error);
+            return Err(1);
+        }
+    };
+    if selected.is_empty() {
+        print_error!(
+            "The firmware ZIP \"{}\" does not contain any BL/AP/CP/CSC/USERDATA packages.",
+            zip_path
+        );
+        return Err(1);
+    }
+
+    let mut member_names = Vec::new();
+    selected.append_to(&mut member_names);
+
+    let file = Arc::new(file);
+    let mut sources = Vec::new();
+    for member in &member_names {
+        let entry = entries
+            .iter()
+            .find(|entry| &entry.name == member)
+            .expect("selected members always come from the entry list");
+        if !entry.is_stored {
+            print_error!(
+                "\"{}\" is compressed inside the ZIP archive and cannot be flashed in place. Extract \"{}\" and flash the extracted folder instead.",
+                member,
+                zip_path
+            );
+            return Err(1);
+        }
+        if entry.size == 0 {
+            print_error!("ZIP member \"{}\" is empty.", member);
+            return Err(1);
+        }
+        sources.push(TarSource {
+            display_name: format!("{member} (in {zip_path})"),
+            file: Arc::clone(&file),
+            base_offset: entry.data_start,
+            size: entry.size,
+            verify_md5: member.to_lowercase().ends_with(".md5"),
+        });
+    }
+    Ok((sources, selected))
 }
 
 fn scan_tar_packages(
@@ -821,13 +892,17 @@ pub(crate) fn action_flash(
     skip_size_check: bool,
     skip_md5: bool,
     pit: Option<&str>,
+    zip: Option<&str>,
     csc_mode: &str,
     package_selection: &FolderPackages,
     partitions: &[PartitionArg],
 ) -> i32 {
     // Validate package identity and destructive-mode requirements before
-    // opening a device session.
-    if let Err(error) = validate_package_selection(package_selection, csc_mode, repartition) {
+    // opening a device session. The zip path validates the *selected member
+    // names* instead, once they are known.
+    if zip.is_none()
+        && let Err(error) = validate_package_selection(package_selection, csc_mode, repartition)
+    {
         print_error!("{}", error);
         return 1;
     }
@@ -866,19 +941,44 @@ pub(crate) fn action_flash(
 
     let mut resolved_entries = Vec::new();
     let mut packaged_pit = None;
-    if !packages.is_empty() {
+    if let Some(zip_path) = zip {
+        if !package_selection.is_empty() {
+            print_error!("Choose either --zip or explicit package slots, not both.");
+            return 1;
+        }
+        let (sources, selected) = match tar_sources_from_zip(zip_path, csc_mode) {
+            Ok(result) => result,
+            Err(code) => return code,
+        };
+        if let Err(error) = validate_package_selection(&selected, csc_mode, repartition) {
+            print_error!("{}", error);
+            return 1;
+        }
+        let (entries, local_pit) = match scan_tar_sources(&sources, skip_md5) {
+            Ok(res) => res,
+            Err(code) => return code,
+        };
+        resolved_entries = entries;
+        packaged_pit = local_pit;
+        if resolved_entries.is_empty() {
+            print_error!(
+                "The selected firmware packages do not contain any flashable partition payloads."
+            );
+            return 1;
+        }
+    } else if !packages.is_empty() {
         let (entries, local_pit) = match scan_tar_packages(&packages, skip_md5) {
             Ok(res) => res,
             Err(code) => return code,
         };
         resolved_entries = entries;
         packaged_pit = local_pit;
-    }
-    if !packages.is_empty() && resolved_entries.is_empty() {
-        print_error!(
-            "The selected firmware packages do not contain any flashable partition payloads."
-        );
-        return 1;
+        if resolved_entries.is_empty() {
+            print_error!(
+                "The selected firmware packages do not contain any flashable partition payloads."
+            );
+            return 1;
+        }
     }
     pit_file_bytes = match select_pit_source(pit_file_bytes, packaged_pit) {
         Ok(pit) => pit,
@@ -1241,17 +1341,41 @@ mod tests {
         directory
     }
 
-    fn write_tar(path: &Path, entries: &[(&str, &[u8])]) {
-        let file = File::create(path).unwrap();
-        let mut archive = Builder::new(file);
+    fn tar_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut builder = Builder::new(Vec::new());
         for (name, bytes) in entries {
             let mut header = Header::new_gnu();
             header.set_size(bytes.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
-            archive.append_data(&mut header, name, *bytes).unwrap();
+            builder.append_data(&mut header, name, *bytes).unwrap();
         }
-        archive.finish().unwrap();
+        builder.into_inner().unwrap()
+    }
+
+    fn tar_md5_bytes(member_name: &str, entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut bytes = tar_bytes(entries);
+        let mut hasher = fast_md5::Md5::new();
+        hasher.update(&bytes);
+        let digest = hasher.finalize();
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        bytes.extend_from_slice(format!("{hex}  {member_name}\n").as_bytes());
+        bytes
+    }
+
+    fn write_firmware_zip(path: &Path, members: &[(&str, &[u8], zip::CompressionMethod)]) {
+        let file = File::create(path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        for (name, bytes, method) in members {
+            let options = zip::write::SimpleFileOptions::default().compression_method(*method);
+            writer.start_file(*name, options).unwrap();
+            std::io::Write::write_all(&mut writer, bytes).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    fn write_tar(path: &Path, entries: &[(&str, &[u8])]) {
+        fs::write(path, tar_bytes(entries)).unwrap();
     }
 
     #[test]
@@ -1420,6 +1544,7 @@ mod tests {
             false,
             true,
             None,
+            None,
             "home",
             &packages,
             &[],
@@ -1446,6 +1571,7 @@ mod tests {
             false,
             false,
             true,
+            None,
             None,
             "home",
             &packages,
@@ -1501,6 +1627,7 @@ mod tests {
             false,
             true,
             pit.to_str(),
+            None,
             "wipe",
             &packages,
             &[],
@@ -1556,6 +1683,113 @@ mod tests {
         }
         .unwrap();
         assert_eq!(&remap[..], payload);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn zip_flash_sources_scan_and_verify_without_extraction() {
+        let directory = temp_test_dir("zip-scan");
+        let zip_path = directory.join("firmware.zip");
+        let payload = b"persist-payload";
+        let ap = tar_md5_bytes("AP_S931B_test.tar.md5", &[("persist.img", payload)]);
+        let csc = tar_md5_bytes(
+            "HOME_CSC_S931B_test.tar.md5",
+            &[("cache.img", b"cache-bytes")],
+        );
+        write_firmware_zip(
+            &zip_path,
+            &[
+                ("AP_S931B_test.tar.md5", &ap, zip::CompressionMethod::Stored),
+                (
+                    "HOME_CSC_S931B_test.tar.md5",
+                    &csc,
+                    zip::CompressionMethod::Stored,
+                ),
+            ],
+        );
+
+        let (sources, selected) = tar_sources_from_zip(zip_path.to_str().unwrap(), "home").unwrap();
+        assert_eq!(selected.ap.as_deref(), Some("AP_S931B_test.tar.md5"));
+        assert_eq!(sources.len(), 2);
+
+        // Full scan including MD5 footer verification from the mmapped region.
+        let (entries, pit) = scan_tar_sources(&sources, false).unwrap();
+        assert!(pit.is_none());
+        let persist = entries
+            .iter()
+            .find(|e| e.normalized_name == "persist.img")
+            .unwrap();
+        assert_eq!(&persist.mmap[..], payload);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn deflated_zip_member_fails_closed_before_scanning() {
+        let directory = temp_test_dir("zip-deflated");
+        let zip_path = directory.join("firmware.zip");
+        let ap = tar_md5_bytes("AP_test.tar.md5", &[("persist.img", b"x")]);
+        write_firmware_zip(
+            &zip_path,
+            &[("AP_test.tar.md5", &ap, zip::CompressionMethod::Deflated)],
+        );
+        assert!(tar_sources_from_zip(zip_path.to_str().unwrap(), "home").is_err());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn corrupted_zip_member_md5_fails_closed() {
+        let directory = temp_test_dir("zip-bad-md5");
+        let zip_path = directory.join("firmware.zip");
+        let member_name = "AP_test.tar.md5";
+        let mut ap = tar_md5_bytes(member_name, &[("persist.img", b"payload")]);
+        // Footer layout: "<32 hex>  <member-name>\n" — flip the first hex digit.
+        let footer_hex_start = ap.len() - (32 + 2 + member_name.len() + 1);
+        ap[footer_hex_start] = if ap[footer_hex_start] == b'0' {
+            b'1'
+        } else {
+            b'0'
+        };
+        write_firmware_zip(
+            &zip_path,
+            &[("AP_test.tar.md5", &ap, zip::CompressionMethod::Stored)],
+        );
+        let (sources, _) = tar_sources_from_zip(zip_path.to_str().unwrap(), "home").unwrap();
+        assert!(scan_tar_sources(&sources, false).is_err());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn unmatched_zip_entry_blocks_the_flash_plan() {
+        let directory = temp_test_dir("zip-unmatched");
+        let zip_path = directory.join("firmware.zip");
+        let ap = tar_md5_bytes(
+            "AP_S931BXXU1AYF1_release.tar.md5",
+            &[("not-a-device-partition.img", b"payload")],
+        );
+        write_firmware_zip(
+            &zip_path,
+            &[(
+                "AP_S931BXXU1AYF1_release.tar.md5",
+                &ap,
+                zip::CompressionMethod::Stored,
+            )],
+        );
+
+        let result = action_flash(
+            UsbBackendOption::Mock,
+            false,
+            false,
+            false,
+            false,
+            false,
+            true,
+            None,
+            zip_path.to_str(),
+            "home",
+            &FolderPackages::default(),
+            &[],
+        );
+        assert_eq!(result, 1);
         fs::remove_dir_all(directory).unwrap();
     }
 }

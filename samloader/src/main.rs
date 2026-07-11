@@ -522,6 +522,71 @@ fn scan_package_folder(folder: &str, csc_mode: &str) -> Result<FolderPackages, S
     })
 }
 
+pub(crate) fn select_zip_packages(
+    names: &[String],
+    csc_mode: &str,
+) -> Result<FolderPackages, String> {
+    let mut bl = Vec::new();
+    let mut ap = Vec::new();
+    let mut cp = Vec::new();
+    let mut home_csc = Vec::new();
+    let mut csc = Vec::new();
+    let mut userdata = Vec::new();
+
+    for name in names {
+        if !is_tar_package_name(name) {
+            continue;
+        }
+        let upper_name = name.to_ascii_uppercase();
+        let path = PathBuf::from(name);
+        if upper_name.starts_with("BL_") {
+            bl.push(path);
+        } else if upper_name.starts_with("AP_") {
+            ap.push(path);
+        } else if upper_name.starts_with("CP_") {
+            cp.push(path);
+        } else if upper_name.starts_with("HOME_CSC_") {
+            home_csc.push(path);
+        } else if upper_name.starts_with("CSC_") {
+            csc.push(path);
+        } else if upper_name.starts_with("USERDATA_") {
+            userdata.push(path);
+        }
+    }
+
+    let home_csc = select_package("HOME_CSC", home_csc)?;
+    let csc = select_package("CSC", csc)?;
+    let selected_csc = match csc_mode {
+        "home" => {
+            if home_csc.is_none() && csc.is_some() {
+                return Err(
+                    "HOME_CSC package was not found in the ZIP. Use --csc-mode wipe to select CSC instead."
+                        .to_string(),
+                );
+            }
+            home_csc
+        }
+        "wipe" => {
+            if csc.is_none() && home_csc.is_some() {
+                return Err(
+                    "CSC package was not found in the ZIP. Omit --csc-mode wipe to select HOME_CSC instead."
+                        .to_string(),
+                );
+            }
+            csc
+        }
+        _ => return Err(format!("Unknown CSC mode: {csc_mode}")),
+    };
+
+    Ok(FolderPackages {
+        bl: select_package("BL", bl)?,
+        ap: select_package("AP", ap)?,
+        cp: select_package("CP", cp)?,
+        csc: selected_csc,
+        userdata: select_package("USERDATA", userdata)?,
+    })
+}
+
 fn resolve_package_selection(
     folder: Option<&str>,
     csc_mode: &str,
@@ -937,6 +1002,7 @@ fn main() {
                 sub_matches.get_flag("skip-size-check"),
                 sub_matches.get_flag("skip-md5"),
                 pit,
+                None,
                 csc_mode,
                 &packages,
                 &partitions,
@@ -1083,5 +1149,47 @@ mod tests {
         };
         let error = resolve_package_selection(Some("unused"), "home", explicit).unwrap_err();
         assert!(error.contains("either --folder or explicit"));
+    }
+
+    fn member_names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|n| n.to_string()).collect()
+    }
+
+    #[test]
+    fn zip_member_selection_defaults_to_home_csc() {
+        let names = member_names(&[
+            "BL_S931BXXU1AYF1_release.tar.md5",
+            "AP_S931BXXU1AYF1_release.tar.md5",
+            "CP_S931BXXU1AYE9_release.tar.md5",
+            "CSC_OXM_S931BOXM1AYF1_release.tar.md5",
+            "HOME_CSC_OXM_S931BOXM1AYF1_release.tar.md5",
+        ]);
+        let packages = select_zip_packages(&names, "home").unwrap();
+        assert_eq!(
+            packages.csc.as_deref(),
+            Some("HOME_CSC_OXM_S931BOXM1AYF1_release.tar.md5")
+        );
+        let packages = select_zip_packages(&names, "wipe").unwrap();
+        assert_eq!(
+            packages.csc.as_deref(),
+            Some("CSC_OXM_S931BOXM1AYF1_release.tar.md5")
+        );
+    }
+
+    #[test]
+    fn zip_member_selection_rejects_ambiguous_slots_and_missing_home_csc() {
+        let ambiguous = member_names(&["AP_one.tar.md5", "AP_two.tar.md5"]);
+        assert!(select_zip_packages(&ambiguous, "home").is_err());
+
+        let wipe_only = member_names(&["AP_x.tar.md5", "CSC_OXM_x.tar.md5"]);
+        let error = select_zip_packages(&wipe_only, "home").unwrap_err();
+        assert!(error.contains("HOME_CSC"));
+    }
+
+    #[test]
+    fn zip_member_selection_prefers_md5_and_ignores_non_packages() {
+        let names = member_names(&["AP_x.tar", "AP_x.tar.md5", "readme.txt"]);
+        let packages = select_zip_packages(&names, "home").unwrap();
+        assert_eq!(packages.ap.as_deref(), Some("AP_x.tar.md5"));
     }
 }

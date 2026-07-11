@@ -21,6 +21,8 @@ cfg-if = { workspace = true }
 
 [dev-dependencies]
 samloader-odin = { workspace = true, features = ["mock"] }
+zip = { version = "7.2.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+fast-md5 = "1.0"
 
 [features]
 default = ["nusb", "serialport"]
