@@ -220,7 +220,7 @@ function packageList(packages: FolderPackages) {
 export function App() {
   const saved = useRef(readPreferences()).current;
   const [appInfo, setAppInfo] = useState<AppInfo>({
-    version: "2.0.0",
+    version: "2.0.1",
     defaultBackend: "vcom",
     backends: ["vcom", "nusb"],
   });
