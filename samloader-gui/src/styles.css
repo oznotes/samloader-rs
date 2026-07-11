@@ -1512,21 +1512,62 @@ input:focus {
 }
 
 .flash-review {
-  width: min(650px, 100%);
+  width: min(560px, 100%);
+  padding: 18px;
+}
+
+.flash-review h2 {
+  font-size: 16px;
+}
+
+.flash-review > p {
+  margin-block: 10px 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.flash-review .modal-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.flash-review .modal-list {
+  gap: 7px;
+  margin: 12px 0;
+}
+
+.flash-review .modal-list div {
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.flash-review .modal-list span {
+  font-size: 11px;
 }
 
 .flash-review .modal-list code {
+  font-size: 12px;
+  line-height: 1.35;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+.flash-review .warning-row {
+  margin-top: 8px;
+  padding: 7px 9px;
+  font-size: 12px;
 }
 
 .flash-acknowledge {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 10px;
   color: var(--text);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
   line-height: 1.4;
 }
@@ -1541,6 +1582,10 @@ input:focus {
 
 .flash-review .field {
   margin-top: 14px;
+}
+
+.flash-review .modal-actions {
+  margin-top: 12px;
 }
 
 .danger-confirm-input {

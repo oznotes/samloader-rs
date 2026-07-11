@@ -1859,7 +1859,6 @@ fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
         return Err(format!("The {label} PIT contains no partition entries."));
     }
 
-    let mut targets = HashSet::new();
     let mut names = HashSet::new();
     let mut extents: HashMap<PitLayoutGroup, Vec<PitExtent>> = HashMap::new();
     let mut flashable_count = 0_usize;
@@ -1867,12 +1866,6 @@ fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
         let partition_name = entry.partition_name.to_string_lossy().trim().to_string();
         if partition_name.is_empty() {
             return Err(format!("The {label} PIT contains an unnamed partition."));
-        }
-        if !targets.insert(pit_target_key(entry)) {
-            return Err(format!(
-                "The {label} PIT contains duplicate partition target {}.",
-                partition_name
-            ));
         }
         if !names.insert(pit_layout_name_key(entry)) {
             return Err(format!(
@@ -3663,14 +3656,14 @@ mod tests {
             "DSP_B"
         );
 
-        let mut duplicate = PitData::new(bytes).unwrap();
-        let first_key = pit_target_key(&duplicate.entries[0]);
-        let first_binary_type = duplicate.entries[0].binary_type;
-        let first_device_type = duplicate.entries[0].device_type;
-        duplicate.entries[1].binary_type = first_binary_type;
-        duplicate.entries[1].device_type = first_device_type;
-        duplicate.entries[1].identifier = first_key.2;
-        assert!(validate_pit_layout(&duplicate, "selected").is_err());
+        let mut duplicate_target = PitData::new(bytes).unwrap();
+        let first_key = pit_target_key(&duplicate_target.entries[0]);
+        let first_binary_type = duplicate_target.entries[0].binary_type;
+        let first_device_type = duplicate_target.entries[0].device_type;
+        duplicate_target.entries[1].binary_type = first_binary_type;
+        duplicate_target.entries[1].device_type = first_device_type;
+        duplicate_target.entries[1].identifier = first_key.2;
+        validate_pit_layout(&duplicate_target, "selected").unwrap();
 
         let mut incompatible = PitData::new(bytes).unwrap();
         incompatible.lu_count = incompatible.lu_count.saturating_add(1);
