@@ -252,6 +252,50 @@ pub fn detect_device_checked(usb_backend: UsbBackendOption, wait: bool) -> Resul
     }
 }
 
+/// Detects a compatible Samsung USB/VCOM device by VID/PID without sending an Odin handshake.
+///
+/// This is intended for passive UI presence checks before a real flashing
+/// session. Callers that need protocol proof should use
+/// [`detect_device_checked`].
+pub fn detect_device_present_checked(
+    usb_backend: UsbBackendOption,
+    wait: bool,
+) -> Result<bool, OdinError> {
+    #[cfg(any(feature = "mock", debug_assertions, test))]
+    if matches!(usb_backend, UsbBackendOption::Mock) {
+        return Ok(true);
+    }
+
+    let mut announced_wait = false;
+    loop {
+        let probe = match usb_backend {
+            #[cfg(feature = "serialport")]
+            UsbBackendOption::Vcom => SerialBackend::find_download_device(false).map(|_| ()),
+            #[cfg(feature = "nusb")]
+            UsbBackendOption::Nusb => NusbBackend::find_download_device(false).map(|_| ()),
+            #[cfg(feature = "rusb")]
+            UsbBackendOption::Libusb => RusbBackend::find_download_device(false).map(|_| ()),
+            #[cfg(any(feature = "mock", debug_assertions, test))]
+            UsbBackendOption::Mock => Ok(()),
+        };
+        match probe {
+            Ok(()) => return Ok(true),
+            Err(OdinError::MultipleDevices(count)) => {
+                return Err(OdinError::MultipleDevices(count));
+            }
+            Err(OdinError::DeviceNotFound) if !wait => return Ok(false),
+            Err(error) if !wait => return Err(error),
+            Err(_) => {
+                if !announced_wait {
+                    println!("Waiting for a compatible Samsung USB/VCOM device...");
+                    announced_wait = true;
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        }
+    }
+}
+
 /// Helper function to detect a compatible download-mode device on a given backend.
 ///
 /// This compatibility wrapper returns `false` for both missing and ambiguous

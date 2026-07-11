@@ -29,7 +29,8 @@ pub use firmware::{
 };
 pub use odin::{OdinManager, reboot_download};
 pub use usb::{
-    UsbBackend, UsbBackendOption, UsbTransfer, create_backend, detect_device, detect_device_checked,
+    UsbBackend, UsbBackendOption, UsbTransfer, create_backend, detect_device,
+    detect_device_checked, detect_device_present_checked,
 };
 
 #[cfg(feature = "nusb")]

@@ -414,7 +414,6 @@ export function App() {
   const [flashParts, setFlashParts] = useState<Record<string, FlashPart>>({});
   const [flashOverall, setFlashOverall] = useState({ bytes: 0, total: 0, pct: 0 });
   const [flashAcknowledged, setFlashAcknowledged] = useState(false);
-  const [flashConfirmation, setFlashConfirmation] = useState("");
   const flashWaitGeneration = useRef(0);
 
   const [verifyRows, setVerifyRows] = useState<VerifyRow[]>([]);
@@ -658,8 +657,7 @@ export function App() {
   const repartitionHasWipeCsc = hasWipeCscForRepartition(flashMode === "folder", packages, cscMode);
   const destructive = flashOpts.repartition || factoryReset;
   const folderReviewValid = flashMode !== "folder" || reviewedFolderPackages.length === selectedPackages.length;
-  const flashPhrase = flashOpts.repartition ? "REPARTITION" : factoryReset ? "ERASE" : "";
-  const flashConfirmationValid = flashAcknowledged && (!flashPhrase || flashConfirmation.trim().toUpperCase() === flashPhrase);
+  const flashConfirmationValid = flashAcknowledged;
   const flashReady = selectedPackages.length > 0
     && !folderScanBusy
     && folderReviewValid
@@ -1139,7 +1137,6 @@ export function App() {
     };
     setFlashModal(false);
     setFlashAcknowledged(false);
-    setFlashConfirmation("");
     if (deviceConnected && !flashOpts.wait) await startFlashRequest(req);
     else void waitForFlashDevice(req);
   }
@@ -1443,7 +1440,7 @@ export function App() {
                         {" · "}
                         {deviceConnected ? "device in download mode" : flashOpts.wait ? "waiting is enabled" : "connect a device or enable Wait for device"}
                       </span>
-                      <button className={destructive ? "primary danger" : "primary"} disabled={!flashReady} title={!flashReady ? flashReadinessMessage(selectedPackages.length, folderScanBusy, deviceConnected, flashOpts.wait, flashOpts.repartition, missingCorePackages, repartitionHasWipeCsc, folderReviewValid) : undefined} onClick={() => { modalReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setFlashAcknowledged(false); setFlashConfirmation(""); setFlashModal(true); }}>
+                      <button className={destructive ? "primary danger" : "primary"} disabled={!flashReady} title={!flashReady ? flashReadinessMessage(selectedPackages.length, folderScanBusy, deviceConnected, flashOpts.wait, flashOpts.repartition, missingCorePackages, repartitionHasWipeCsc, folderReviewValid) : undefined} onClick={() => { modalReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setFlashAcknowledged(false); setFlashModal(true); }}>
                         <Lightning weight="bold" /> Flash device
                       </button>
                     </div>
@@ -1615,13 +1612,8 @@ export function App() {
             {unverifiedTarPackages.length > 0 && <div className="warning-row"><Warning /> Plain .tar packages have no MD5 footer. Their integrity cannot be verified before flashing.</div>}
             {(flashOpts.skipMd5 || flashOpts.skipSize) && <div className="inline-error" role="alert"><WarningOctagon /> Protection disabled: {[flashOpts.skipMd5 && "MD5 verification", flashOpts.skipSize && "partition size checks"].filter(Boolean).join(" and ")}.</div>}
             <label className="flash-acknowledge"><input type="checkbox" checked={flashAcknowledged} onChange={(event) => setFlashAcknowledged(event.target.checked)} /> I verified that these packages match the model and bootloader of the device I intend to flash.</label>
-            {flashPhrase && (
-              <Field label={`Type ${flashPhrase} to continue`}>
-                <input className="danger-confirm-input" value={flashConfirmation} onChange={(event) => setFlashConfirmation(event.target.value)} autoComplete="off" spellCheck={false} />
-              </Field>
-            )}
             <div className="modal-actions">
-              <button ref={flashCancelRef} className="ghost" onClick={() => { setFlashModal(false); setFlashAcknowledged(false); setFlashConfirmation(""); }}>Cancel</button>
+              <button ref={flashCancelRef} className="ghost" onClick={() => { setFlashModal(false); setFlashAcknowledged(false); }}>Cancel</button>
               <button className={destructive ? "primary danger" : "primary"} disabled={!flashConfirmationValid || !flashReady} onClick={confirmFlash}>{deviceConnected ? flashOpts.wait ? "Check device & flash" : "Flash now" : flashOpts.wait ? "Wait for device & flash" : "Device disconnected"}</button>
             </div>
           </div>

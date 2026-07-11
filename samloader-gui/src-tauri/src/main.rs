@@ -5,7 +5,7 @@ use memmap2::{Mmap, MmapOptions};
 use samloader_fus::{DownloadProgress, FusClient, try_fetch_version_xml};
 use samloader_odin::{
     FirmwareFile, FirmwareInfo, FirmwareLz4File, Lz4FrameHeader, OdinManager, UsbBackendOption,
-    create_backend, detect_device_checked, reboot_download, validate_firmware_plan,
+    create_backend, detect_device_present_checked, reboot_download, validate_firmware_plan,
     verify_md5_footer,
 };
 use samloader_pit::{DeviceType, PitData, PitEntry};
@@ -2967,7 +2967,8 @@ async fn detect_download_device(
         ActiveOperation::Device("device detection"),
         move || {
             let backend = backend_from_str(&backend)?;
-            let connected = detect_device_checked(backend, wait).map_err(|e| e.to_string())?;
+            let connected =
+                detect_device_present_checked(backend, wait).map_err(|e| e.to_string())?;
             Ok(DeviceStatus {
                 connected,
                 label: if connected {
