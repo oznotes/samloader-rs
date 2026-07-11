@@ -389,6 +389,23 @@ fn scan_tar_sources(
                         return Err(1);
                     }
                 }
+                // Fail closed if the entry's declared payload spills past the end of
+                // its source region. Payload entries are mmapped directly against the
+                // underlying file (not the bounded archive Cursor), so a corrupted or
+                // malicious header declaring an oversized entry could otherwise map
+                // bytes belonging to adjacent data, or fault out of bounds.
+                let entry_end = entry.raw_file_position().checked_add(size);
+                match entry_end {
+                    Some(end) if end <= source.size => {}
+                    _ => {
+                        print_error!(
+                            "Archive entry \"{}\" in \"{}\" declares data past the end of the archive.",
+                            entry_path,
+                            pkg
+                        );
+                        return Err(1);
+                    }
+                }
                 let mmap = match unsafe {
                     MmapOptions::new()
                         .offset(offset)
@@ -1704,6 +1721,60 @@ mod tests {
         }
         .unwrap();
         assert_eq!(&remap[..], payload);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn tar_entry_spilling_past_region_fails_closed() {
+        let directory = temp_test_dir("tar-spill");
+        let container = directory.join("container.bin");
+
+        // Build a tar whose second entry's header lies about its size: it
+        // declares 5000 bytes of payload, but only 5 real bytes ("short")
+        // actually follow before the archive's own terminator blocks.
+        // `Builder::append` (unlike `append_data`) writes the header verbatim
+        // and pads based on the *actual* bytes copied, so this produces a
+        // syntactically valid, correctly checksummed header whose declared
+        // size does not match reality -- exactly the shape of a corrupted or
+        // malicious archive that the seek-based walk must not tolerate.
+        let mut builder = Builder::new(Vec::new());
+        let mut header1 = Header::new_gnu();
+        header1.set_size(7);
+        header1.set_mode(0o644);
+        header1.set_path("persist.img").unwrap();
+        header1.set_cksum();
+        builder.append(&header1, &b"payload"[..]).unwrap();
+
+        let mut header2 = Header::new_gnu();
+        header2.set_size(5000);
+        header2.set_mode(0o644);
+        header2.set_path("spill.img").unwrap();
+        header2.set_cksum();
+        builder.append(&header2, &b"short"[..]).unwrap();
+
+        let archive_bytes = builder.into_inner().unwrap();
+
+        // Append trailing filler after the archive's own region, standing in
+        // for adjacent data in a larger container (e.g. the next member of a
+        // firmware ZIP). It comfortably covers the entry's bogus declared
+        // range, so the underlying mmap would succeed (silently reading that
+        // filler as if it were "spill.img") if the new bounds check were
+        // removed -- proving the check itself, not an incidental mmap
+        // failure, is what rejects the archive.
+        let mut container_bytes = archive_bytes.clone();
+        container_bytes.extend_from_slice(&vec![0xAA; 8192]);
+        fs::write(&container, &container_bytes).unwrap();
+
+        let source = TarSource {
+            display_name: "container.bin!inner.tar".to_string(),
+            file: Arc::new(File::open(&container).unwrap()),
+            base_offset: 0,
+            size: archive_bytes.len() as u64,
+            verify_md5: false,
+        };
+
+        let result = scan_tar_sources(&[source], true);
+        assert!(result.is_err());
         fs::remove_dir_all(directory).unwrap();
     }
 

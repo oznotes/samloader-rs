@@ -1927,6 +1927,20 @@ fn scan_tar_sources(
                 {
                     continue;
                 }
+                // Fail closed if the entry's declared payload spills past the end of
+                // its source region. Payload entries are mmapped directly against the
+                // underlying file (not the bounded archive Cursor), so a corrupted or
+                // malicious header declaring an oversized entry could otherwise map
+                // bytes belonging to adjacent data, or fault out of bounds.
+                let entry_end = entry.raw_file_position().checked_add(size);
+                match entry_end {
+                    Some(end) if end <= source.size => {}
+                    _ => {
+                        return Err(format!(
+                            "Archive entry \"{entry_path}\" in \"{pkg}\" declares data past the end of the archive."
+                        ));
+                    }
+                }
                 let mmap = unsafe {
                     MmapOptions::new()
                         .offset(offset)
