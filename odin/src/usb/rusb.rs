@@ -175,18 +175,24 @@ impl UsbBackend for RusbBackend {
         let mut print_wait = false;
         loop {
             if let Ok(devices) = context.devices() {
+                let mut matching_devices = Vec::new();
                 for device in devices.iter() {
                     if let Ok(descriptor) = device.device_descriptor()
                         && predicate(descriptor.vendor_id(), descriptor.product_id())
                     {
-                        return Ok(device);
+                        matching_devices.push(device);
                     }
+                }
+                if let Some(device) = select_unique_device(matching_devices)? {
+                    return Ok(device);
                 }
             }
 
-            if wait && !print_wait {
-                println!("Waiting for device...");
-                print_wait = true;
+            if wait {
+                if !print_wait {
+                    println!("Waiting for device...");
+                    print_wait = true;
+                }
                 std::thread::sleep(Duration::from_secs(1));
             } else {
                 break;

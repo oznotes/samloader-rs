@@ -35,12 +35,13 @@ type View = "firmware" | "flash" | "device" | "verify" | "settings";
 type Theme = "dark" | "light";
 type FlashMode = "pkg" | "folder";
 type CscMode = "home" | "wipe";
-type RunState = "idle" | "active" | "done" | "error";
+type RunState = "idle" | "waiting" | "active" | "done" | "error";
 type DownloadState = "idle" | "preparing" | "downloading" | "paused" | "canceling" | "cancelled" | "done" | "error";
 type FirmwareFilter = "all" | "stable" | "beta";
 type FirmwareKind = "latest" | "stable" | "beta";
+type ActiveOperation = "download" | "flash-wait" | "flash" | "device";
 
-type FolderPackages = {
+export type FolderPackages = {
   bl?: string | null;
   ap?: string | null;
   cp?: string | null;
@@ -76,6 +77,12 @@ type FirmwareRow = {
   kind: FirmwareKind;
 };
 
+type FirmwareRetry = {
+  row: FirmwareRow;
+  model: string;
+  region: string;
+};
+
 type DownloadPlan = {
   model: string;
   region: string;
@@ -100,7 +107,7 @@ type AndroidDevice = {
   message: string;
 };
 
-type Preferences = {
+export type Preferences = {
   theme: Theme;
   backend: string;
   verbose: boolean;
@@ -127,6 +134,33 @@ type FlashPart = {
   total: number;
 };
 
+type FlashRequestPayload = {
+  backend: string;
+  verbose: boolean;
+  wait: boolean;
+  noReboot: boolean;
+  repartition: boolean;
+  skipSizeCheck: boolean;
+  skipMd5: boolean;
+  pit: null;
+  folder: string | null;
+  cscMode: CscMode;
+  packages: FolderPackages;
+  reviewedPackages: PackageIdentity[] | null;
+};
+
+type PackageIdentity = {
+  path: string;
+  canonicalPath: string;
+  size: number;
+  modifiedUnixNanos: string;
+};
+
+type FolderScanResult = {
+  packages: FolderPackages;
+  identities: PackageIdentity[];
+};
+
 type DeviceStatus = {
   connected: boolean;
   label: string;
@@ -139,6 +173,11 @@ type PitRow = {
   size: number;
 };
 
+type DevicePitRead = {
+  snapshotId: string;
+  rows: PitRow[];
+};
+
 type VerifyRow = {
   file: string;
   status: "pending" | "checking" | "ok" | "error";
@@ -147,10 +186,17 @@ type VerifyRow = {
 
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 
-const quote = (value: string) => {
-  if (!value) return "";
-  return /[\s"]/g.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+// CLI examples target PowerShell on Windows. Single-quoted strings are literal;
+// embedded apostrophes are represented by two apostrophes.
+export const powerShellQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
+
+export const downloadOutputCliFlag = (selectedDirectory: string, defaultDirectory = "") => {
+  const directory = selectedDirectory.trim() || defaultDirectory.trim();
+  return directory ? ` -d ${powerShellQuote(directory)}` : "";
 };
+
+export const deviceCliSubcommand = (hasPitRows: boolean) =>
+  hasPitRows ? "print-pit --no-reboot" : "detect";
 
 const fmtBytes = (bytes: number) => {
   if (!bytes) return "0 B";
@@ -181,10 +227,26 @@ const errorMessage = (error: unknown) => {
   return "The operation could not be completed.";
 };
 
-const readPreferences = (): Partial<Preferences> => {
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+export const validatePreferences = (value: unknown): Partial<Preferences> => {
+  if (!isRecord(value)) return {};
+  const result: Partial<Preferences> = {};
+  if (value.theme === "dark" || value.theme === "light") result.theme = value.theme;
+  if (typeof value.backend === "string" && /^[a-z0-9_-]{1,24}$/i.test(value.backend)) result.backend = value.backend;
+  if (typeof value.verbose === "boolean") result.verbose = value.verbose;
+  if (typeof value.model === "string" && value.model.length <= 48) result.model = value.model;
+  if (typeof value.region === "string" && value.region.length <= 3) result.region = value.region;
+  if (typeof value.outDir === "string" && value.outDir.length <= 32_767) result.outDir = value.outDir;
+  if (typeof value.threads === "number" && Number.isInteger(value.threads) && value.threads >= 1 && value.threads <= 16) result.threads = value.threads;
+  return result;
+};
+
+export const readPreferences = (): Partial<Preferences> => {
   if (typeof window === "undefined") return {};
   try {
-    return JSON.parse(window.localStorage.getItem("samloader.preferences.v2") ?? "{}") as Partial<Preferences>;
+    return validatePreferences(JSON.parse(window.localStorage.getItem("samloader.preferences.v2") ?? "{}"));
   } catch {
     return {};
   }
@@ -217,22 +279,91 @@ function packageList(packages: FolderPackages) {
   ].filter(Boolean) as string[];
 }
 
+const REQUIRED_REPARTITION_SLOTS = ["bl", "ap", "cp", "csc"] as const;
+
+export const missingRepartitionSlots = (packages: FolderPackages) =>
+  REQUIRED_REPARTITION_SLOTS.filter((slot) => !packages[slot]);
+
+export const packagesForFlashRequest = (folderMode: boolean, packages: FolderPackages): FolderPackages =>
+  folderMode ? {} : { ...packages };
+
+export const isRegularCscPackage = (path?: string | null) => {
+  if (!path) return false;
+  const name = basename(path).toUpperCase();
+  return /^CSC(?:_|[.-])/.test(name) && !/^HOME_CSC(?:_|[.-])/.test(name);
+};
+
+export const cscModeForFlashRequest = (
+  folderMode: boolean,
+  selectedCsc: string | null | undefined,
+  folderCscMode: CscMode,
+): CscMode => folderMode ? folderCscMode : isRegularCscPackage(selectedCsc) ? "wipe" : "home";
+
+export const cscModeCliFlag = (
+  folderMode: boolean,
+  selectedCsc: string | null | undefined,
+  folderCscMode: CscMode,
+) => cscModeForFlashRequest(folderMode, selectedCsc, folderCscMode) === "wipe"
+  ? " --csc-mode wipe"
+  : "";
+
+export const hasWipeCscForRepartition = (
+  folderMode: boolean,
+  packages: FolderPackages,
+  folderCscMode: CscMode,
+) => cscModeForFlashRequest(folderMode, packages.csc, folderCscMode) === "wipe";
+
+export const canRepartition = (
+  packages: FolderPackages,
+  folderMode: boolean,
+  folderCscMode: CscMode,
+) => missingRepartitionSlots(packages).length === 0
+  && hasWipeCscForRepartition(folderMode, packages, folderCscMode);
+
+export const canStartDownloadPlan = (
+  enoughSpace: boolean,
+  completedFileConflict: boolean,
+  partialFileConflict: boolean,
+  allowReplace: boolean,
+) => enoughSpace
+  && !partialFileConflict
+  && (!completedFileConflict || allowReplace);
+
+export const firmwareIdentityMatches = (
+  expectedModel: string,
+  expectedRegion: string,
+  model: string,
+  region: string,
+) => expectedModel.trim().toUpperCase() === model.trim().toUpperCase()
+  && expectedRegion.trim().toUpperCase() === region.trim().toUpperCase();
+
+export const detectedFirmwareIdentity = (device: Pick<AndroidDevice, "model" | "region">) => ({
+  model: device.model?.trim().toUpperCase() ?? "",
+  region: device.region?.trim().toUpperCase() ?? "",
+});
+
 export function App() {
   const saved = useRef(readPreferences()).current;
   const [appInfo, setAppInfo] = useState<AppInfo>({
-    version: "2.0.1",
+    version: "2.0.2",
     defaultBackend: "vcom",
     backends: ["vcom", "nusb"],
   });
   const [theme, setTheme] = useState<Theme>(saved.theme === "light" ? "light" : "dark");
   const [view, setView] = useState<View>("firmware");
+  const viewRef = useRef<View>("firmware");
   const [backend, setBackend] = useState(saved.backend ?? "vcom");
   const [verbose, setVerbose] = useState(saved.verbose ?? false);
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+  const [commandExpanded, setCommandExpanded] = useState(false);
+  const [closeBlocked, setCloseBlocked] = useState<ActiveOperation | null>(null);
+  const [closeBlockedMessage, setCloseBlockedMessage] = useState("");
 
   const [deviceConnected, setDeviceConnected] = useState(false);
   const [deviceBusy, setDeviceBusy] = useState(false);
   const [pitRows, setPitRows] = useState<PitRow[]>([]);
+  const [pitSnapshotId, setPitSnapshotId] = useState<string | null>(null);
   const [deviceMessage, setDeviceMessage] = useState("Odin / download mode");
   const [deviceError, setDeviceError] = useState("");
   const deviceStatusInFlight = useRef(false);
@@ -249,8 +380,9 @@ export function App() {
   const [downloadPlan, setDownloadPlan] = useState<DownloadPlan | null>(null);
   const [allowReplace, setAllowReplace] = useState(false);
   const [preparingVersion, setPreparingVersion] = useState("");
+  const downloadPrepareGeneration = useRef(0);
   const [downloadControlBusy, setDownloadControlBusy] = useState(false);
-  const [lastFirmware, setLastFirmware] = useState<FirmwareRow | null>(null);
+  const [lastFirmware, setLastFirmware] = useState<FirmwareRetry | null>(null);
 
   const [firmwareState, setFirmwareState] = useState<RunState>("idle");
   const [firmwareError, setFirmwareError] = useState("");
@@ -259,11 +391,13 @@ export function App() {
   const [firmwareQuery, setFirmwareQuery] = useState("");
   const [androidDevice, setAndroidDevice] = useState<AndroidDevice | null>(null);
   const [androidDetecting, setAndroidDetecting] = useState(false);
+  const firmwareSearchGeneration = useRef(0);
 
   const [flashMode, setFlashMode] = useState<FlashMode>("folder");
   const [folder, setFolder] = useState("");
   const [folderScanBusy, setFolderScanBusy] = useState(false);
   const folderScanGeneration = useRef(0);
+  const [reviewedFolderPackages, setReviewedFolderPackages] = useState<PackageIdentity[]>([]);
   const [cscMode, setCscMode] = useState<CscMode>("home");
   const [packages, setPackages] = useState<FolderPackages>({});
   const [flashOpts, setFlashOpts] = useState({
@@ -279,14 +413,20 @@ export function App() {
   const [flashError, setFlashError] = useState("");
   const [flashParts, setFlashParts] = useState<Record<string, FlashPart>>({});
   const [flashOverall, setFlashOverall] = useState({ bytes: 0, total: 0, pct: 0 });
+  const [flashAcknowledged, setFlashAcknowledged] = useState(false);
+  const flashWaitGeneration = useRef(0);
 
   const [verifyRows, setVerifyRows] = useState<VerifyRow[]>([]);
   const [verifyError, setVerifyError] = useState("");
   const downloadCancelRef = useRef<HTMLButtonElement>(null);
   const flashCancelRef = useRef<HTMLButtonElement>(null);
+  const closeCancelRef = useRef<HTMLButtonElement>(null);
+  const modalReturnFocus = useRef<HTMLElement | null>(null);
+  const modalWasOpen = useRef(false);
+  const activeOperationRef = useRef<ActiveOperation | null>(null);
 
-  const refreshDeviceStatus = useCallback(async (wait = false, showBusy = false) => {
-    if (deviceStatusInFlight.current) return;
+  const refreshDeviceStatus = useCallback(async (wait = false, showBusy = false): Promise<DeviceStatus | null> => {
+    if (deviceStatusInFlight.current) return null;
     deviceStatusInFlight.current = true;
     if (showBusy) setDeviceBusy(true);
 
@@ -294,14 +434,47 @@ export function App() {
       const result = await invoke<DeviceStatus>("detect_download_device", { backend, wait });
       setDeviceConnected(result.connected);
       setDeviceMessage(result.label);
-    } catch {
+      if (!result.connected) {
+        setPitRows([]);
+        setPitSnapshotId(null);
+      }
+      return result;
+    } catch (error) {
+      const message = errorMessage(error);
       setDeviceConnected(false);
-      setDeviceMessage("Unable to check download-mode device");
+      setPitRows([]);
+      setPitSnapshotId(null);
+      setDeviceMessage(showBusy ? "Download-mode detection failed" : "Unable to check download-mode device");
+      if (showBusy) setDeviceError(message);
+      return null;
     } finally {
       if (showBusy) setDeviceBusy(false);
       deviceStatusInFlight.current = false;
     }
   }, [backend]);
+
+  const downloadLocked = ["preparing", "downloading", "paused", "canceling"].includes(downloadState);
+  const downloadInFlight = ["downloading", "paused", "canceling"].includes(downloadState);
+  const activeOperation: ActiveOperation | null = flashState === "active"
+    ? "flash"
+    : flashState === "waiting"
+      ? "flash-wait"
+      : downloadInFlight
+        ? "download"
+        : deviceBusy || androidDetecting
+          ? "device"
+          : null;
+  const operationLocked = activeOperation !== null;
+  const operationView: View | null = activeOperation === "download"
+    ? "firmware"
+    : activeOperation === "device"
+      ? "device"
+      : activeOperation
+        ? "flash"
+        : null;
+  const modalOpen = Boolean(downloadPlan || flashModal || closeBlocked);
+  activeOperationRef.current = activeOperation;
+  viewRef.current = view;
 
   useEffect(() => {
     if (!hasTauriRuntime()) return;
@@ -356,13 +529,23 @@ export function App() {
         }));
       }
       if (payload.status === "done") setFlashState("done");
-      else if (payload.status === "error") setFlashState("error");
+      else if (payload.status === "error") {
+        setFlashState("error");
+        setFlashError(payload.message ?? "Flash failed.");
+      }
       else setFlashState("active");
+    });
+
+    const unlistenCloseBlocked = listen<string>("close-blocked", (event) => {
+      modalReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setCloseBlockedMessage(event.payload || "An operation is still active. Keep samloader open until it finishes.");
+      setCloseBlocked(activeOperationRef.current ?? "device");
     });
 
     return () => {
       void unlistenDownload.then((fn) => fn());
       void unlistenFlash.then((fn) => fn());
+      void unlistenCloseBlocked.then((fn) => fn());
     };
   }, []);
 
@@ -377,15 +560,38 @@ export function App() {
   }, [backend, dModel, dOut, dRegion, dThreads, theme, verbose]);
 
   useEffect(() => {
+    setDeviceConnected(false);
+    setPitRows([]);
+    setPitSnapshotId(null);
+    setDeviceError("");
+    setDeviceMessage("Odin / download mode");
+  }, [backend]);
+
+  useEffect(() => {
+    if (view === "firmware") return;
+    downloadPrepareGeneration.current += 1;
+    setPreparingVersion("");
+    setDownloadState((current) => current === "preparing" ? "idle" : current);
+  }, [view]);
+
+  useEffect(() => {
+    if (!activeOperation) {
+      setCloseBlocked(null);
+      setCloseBlockedMessage("");
+    }
+  }, [activeOperation]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         if (downloadPlan) setDownloadPlan(null);
         else if (flashModal) setFlashModal(false);
+        else if (closeBlocked) setCloseBlocked(null);
         return;
       }
-      if (event.key !== "Tab" || (!downloadPlan && !flashModal)) return;
+      if (event.key !== "Tab" || !modalOpen) return;
 
-      const modal = document.querySelector<HTMLElement>(downloadPlan ? ".download-review" : ".modal");
+      const modal = document.querySelector<HTMLElement>(".modal-backdrop .modal");
       const focusable = modal
         ? Array.from(modal.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'))
         : [];
@@ -402,7 +608,18 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [downloadPlan, flashModal]);
+  }, [closeBlocked, downloadPlan, flashModal, modalOpen]);
+
+  useEffect(() => {
+    if (modalOpen && !modalWasOpen.current && !modalReturnFocus.current) {
+      modalReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    } else if (!modalOpen && modalWasOpen.current) {
+      const returnTarget = modalReturnFocus.current;
+      window.setTimeout(() => returnTarget?.focus(), 0);
+      modalReturnFocus.current = null;
+    }
+    modalWasOpen.current = modalOpen;
+  }, [modalOpen]);
 
   useEffect(() => {
     if (downloadPlan) window.setTimeout(() => downloadCancelRef.current?.focus(), 0);
@@ -413,7 +630,16 @@ export function App() {
   }, [flashModal]);
 
   useEffect(() => {
-    if (!hasTauriRuntime() || flashState === "active") return;
+    if (closeBlocked) window.setTimeout(() => closeCancelRef.current?.focus(), 0);
+  }, [closeBlocked]);
+
+  useEffect(() => () => {
+    flashWaitGeneration.current += 1;
+    firmwareSearchGeneration.current += 1;
+  }, []);
+
+  useEffect(() => {
+    if (!hasTauriRuntime() || operationLocked || modalOpen) return;
 
     void refreshDeviceStatus(false, false);
     const interval = window.setInterval(() => {
@@ -421,9 +647,22 @@ export function App() {
     }, 2500);
 
     return () => window.clearInterval(interval);
-  }, [flashState, refreshDeviceStatus]);
+  }, [modalOpen, operationLocked, refreshDeviceStatus]);
 
   const selectedPackages = packageList(packages);
+  const missingCorePackages = missingRepartitionSlots(packages);
+  const unverifiedTarPackages = selectedPackages.filter((path) => path.toLowerCase().endsWith(".tar") && !path.toLowerCase().endsWith(".tar.md5"));
+  const manualCscFactoryReset = flashMode === "pkg" && isRegularCscPackage(packages.csc);
+  const factoryReset = (flashMode === "folder" && cscMode === "wipe") || manualCscFactoryReset;
+  const repartitionHasWipeCsc = hasWipeCscForRepartition(flashMode === "folder", packages, cscMode);
+  const destructive = flashOpts.repartition || factoryReset;
+  const folderReviewValid = flashMode !== "folder" || reviewedFolderPackages.length === selectedPackages.length;
+  const flashConfirmationValid = flashAcknowledged;
+  const flashReady = selectedPackages.length > 0
+    && !folderScanBusy
+    && folderReviewValid
+    && (!flashOpts.repartition || canRepartition(packages, flashMode === "folder", cscMode))
+    && (deviceConnected || flashOpts.wait);
   const firmwareRows = useMemo<FirmwareRow[]>(() => {
     if (!firmwareResults) return [];
     const seen = new Set<string>();
@@ -443,25 +682,24 @@ export function App() {
     const channelMatches = firmwareFilter === "all" || (firmwareFilter === "stable" ? row.kind !== "beta" : row.kind === "beta");
     return channelMatches && row.version.toLowerCase().includes(firmwareQuery.trim().toLowerCase());
   });
-  const downloadLocked = ["preparing", "downloading", "paused", "canceling"].includes(downloadState);
   const connectionThreads = manualConnections ? dThreads : 8;
   const command = useMemo(() => {
-    const globals = `${backend ? ` --usb-backend ${backend}` : ""}${verbose ? " --verbose" : ""}`;
+    const globals = `${backend ? ` --usb-backend ${powerShellQuote(backend)}` : ""}${verbose ? " --verbose" : ""}`;
     if (view === "firmware") {
-      if (!dVersion) return `samloader${globals} check-update -m ${dModel || "MODEL"} -r ${dRegion || "CSC"} --all`;
-      return `samloader${globals} download -m ${dModel || "MODEL"} -r ${dRegion || "CSC"} -v ${quote(dVersion)} -j ${connectionThreads}${dOut ? ` -d ${quote(dOut)}` : ""}`;
+      if (!dVersion) return `samloader${globals} check-update -m ${powerShellQuote(dModel || "MODEL")} -r ${powerShellQuote(dRegion || "CSC")} --all`;
+      return `samloader${globals} download -m ${powerShellQuote(dModel || "MODEL")} -r ${powerShellQuote(dRegion || "CSC")} -v ${powerShellQuote(dVersion)} -j ${connectionThreads}${downloadOutputCliFlag(dOut, appInfo.defaultDownloadDir)}`;
     }
     if (view === "flash") {
       const opts = `${flashOpts.wait ? " --wait" : ""}${flashOpts.noReboot ? " --no-reboot" : ""}${flashOpts.skipMd5 ? " --skip-md5" : ""}${flashOpts.skipSize ? " --skip-size-check" : ""}${flashOpts.repartition ? " --repartition" : ""}`;
       if (flashMode === "folder") {
-        return `samloader${globals} flash${opts} --folder ${quote(folder || "<folder>")}${cscMode === "wipe" ? " --csc-mode wipe" : ""}`;
+        return `samloader${globals} flash${opts} --folder ${powerShellQuote(folder || "<folder>")}${cscModeCliFlag(true, packages.csc, cscMode)}`;
       }
-      return `samloader${globals} flash${opts}${packages.bl ? ` -b ${quote(packages.bl)}` : ""}${packages.ap ? ` -a ${quote(packages.ap)}` : ""}${packages.cp ? ` -c ${quote(packages.cp)}` : ""}${packages.csc ? ` -s ${quote(packages.csc)}` : ""}${packages.userdata ? ` -u ${quote(packages.userdata)}` : ""}`;
+      return `samloader${globals} flash${opts}${cscModeCliFlag(false, packages.csc, cscMode)}${packages.bl ? ` -b ${powerShellQuote(packages.bl)}` : ""}${packages.ap ? ` -a ${powerShellQuote(packages.ap)}` : ""}${packages.cp ? ` -c ${powerShellQuote(packages.cp)}` : ""}${packages.csc ? ` -s ${powerShellQuote(packages.csc)}` : ""}${packages.userdata ? ` -u ${powerShellQuote(packages.userdata)}` : ""}`;
     }
-    if (view === "device") return pitRows.length ? `samloader${globals} print-pit` : `samloader${globals} detect`;
-    if (view === "verify") return `samloader verify-md5 ${verifyRows.map((row) => quote(row.file)).join(" ") || "<files>"}`;
-    return `samloader${globals}`;
-  }, [backend, connectionThreads, cscMode, dModel, dOut, dRegion, dVersion, flashMode, flashOpts, folder, packages, pitRows.length, verbose, verifyRows, view]);
+    if (view === "device") return `samloader${globals} ${deviceCliSubcommand(pitRows.length > 0)}`;
+    if (view === "verify") return `samloader verify-md5 ${verifyRows.map((row) => powerShellQuote(row.file)).join(" ") || powerShellQuote("<files>")}`;
+    return `samloader${globals} --help`;
+  }, [appInfo.defaultDownloadDir, backend, connectionThreads, cscMode, dModel, dOut, dRegion, dVersion, flashMode, flashOpts, folder, packages, pitRows.length, verbose, verifyRows, view]);
 
   const title = {
     firmware: ["Firmware Explorer", "Find every known stable and beta build, then download it safely."],
@@ -472,9 +710,35 @@ export function App() {
   }[view];
 
   async function copyCommand() {
-    await navigator.clipboard.writeText(command);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
+    const showCopied = () => {
+      setCopyFailed(false);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    };
+
+    try {
+      await navigator.clipboard.writeText(command);
+      showCopied();
+      return;
+    } catch {
+      // WebView clipboard access can be unavailable under restrictive policies.
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = command;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copiedWithFallback = document.execCommand("copy");
+    textarea.remove();
+    if (copiedWithFallback) {
+      showCopied();
+    } else {
+      setCopyFailed(true);
+      window.setTimeout(() => setCopyFailed(false), 2400);
+    }
   }
 
   async function pickDirectory(onPick: (path: string) => void) {
@@ -508,17 +772,36 @@ export function App() {
     setFolderScanBusy(true);
     setFlashError("");
     setPackages({});
+    setReviewedFolderPackages([]);
     try {
-      const result = await invoke<FolderPackages>("scan_firmware_folder", { folder: path, cscMode: mode });
+      const result = await invoke<FolderScanResult>("scan_firmware_folder", { folder: path, cscMode: mode });
       if (generation !== folderScanGeneration.current) return;
-      setPackages(result);
-      if (packageList(result).length === 0) setFlashError("No BL, AP, CP, CSC, or USERDATA packages were found in this folder.");
+      setPackages(result.packages);
+      setReviewedFolderPackages(result.identities);
+      if (packageList(result.packages).length === 0) setFlashError("No BL, AP, CP, CSC, or USERDATA packages were found in this folder.");
     } catch (error) {
       if (generation !== folderScanGeneration.current) return;
       setFlashError(errorMessage(error));
     } finally {
       if (generation === folderScanGeneration.current) setFolderScanBusy(false);
     }
+  }
+
+  function editFirmwareIdentity(field: "model" | "region", value: string) {
+    firmwareSearchGeneration.current += 1;
+    if (field === "model") setDModel(value.toUpperCase());
+    else setDRegion(value.toUpperCase());
+    setDVersion("");
+    setFirmwareResults(null);
+    setFirmwareState("idle");
+    setFirmwareError("");
+    setFirmwareFilter("all");
+    setFirmwareQuery("");
+    setAndroidDevice(null);
+    setLastFirmware(null);
+    setDownloadState("idle");
+    setDownloadEvent(null);
+    setDownloadError("");
   }
 
   function validateFirmwareIdentity(model = dModel, region = dRegion) {
@@ -530,6 +813,7 @@ export function App() {
   }
 
   async function searchFirmwares(model = dModel, region = dRegion) {
+    const generation = ++firmwareSearchGeneration.current;
     const cleanModel = model.trim().toUpperCase();
     const cleanRegion = region.trim().toUpperCase();
     const validation = validateFirmwareIdentity(cleanModel, cleanRegion);
@@ -547,6 +831,7 @@ export function App() {
     setFirmwareState("active");
     try {
       const result = await invoke<FirmwareResults>("check_updates", { model: cleanModel, region: cleanRegion });
+      if (generation !== firmwareSearchGeneration.current) return;
       setFirmwareResults({
         latest: result.latest ?? "",
         previous: Array.isArray(result.previous) ? result.previous : [],
@@ -554,6 +839,7 @@ export function App() {
       });
       setFirmwareState("done");
     } catch (error) {
+      if (generation !== firmwareSearchGeneration.current) return;
       setFirmwareState("error");
       setFirmwareError(errorMessage(error));
     }
@@ -561,25 +847,35 @@ export function App() {
 
   async function useConnectedDevice() {
     if (androidDetecting) return;
+    const generation = ++firmwareSearchGeneration.current;
     setAndroidDetecting(true);
     setFirmwareError("");
+    setFirmwareResults(null);
+    setDVersion("");
+    setLastFirmware(null);
+    setDownloadState("idle");
+    setDownloadEvent(null);
+    setDownloadError("");
     try {
       const result = await invoke<AndroidDevice>("detect_android_device");
+      if (generation !== firmwareSearchGeneration.current) return;
       setAndroidDevice(result);
       if (!result.connected) {
         setFirmwareError(result.message || "No authorized Android device was found. Connect it with USB debugging enabled.");
         return;
       }
-      const model = result.model?.trim().toUpperCase() ?? "";
-      const region = result.region?.trim().toUpperCase() ?? "";
-      if (model) setDModel(model);
-      if (region) setDRegion(region);
+      const { model, region } = detectedFirmwareIdentity(result);
+      // Assign both values so an incomplete second device cannot inherit the
+      // previous device's model or sales CSC.
+      setDModel(model);
+      setDRegion(region);
       if (!model || !region) {
         setFirmwareError(`${result.message || "Device detected."} ${!model && !region ? "Model and CSC could not be read." : !model ? "Model could not be read." : "CSC could not be read."} Enter the missing value to search.`);
         return;
       }
       await searchFirmwares(model, region);
     } catch (error) {
+      if (generation !== firmwareSearchGeneration.current) return;
       setFirmwareError(errorMessage(error));
     } finally {
       setAndroidDetecting(false);
@@ -588,13 +884,18 @@ export function App() {
 
   async function prepareDownload(row: FirmwareRow) {
     if (downloadLocked || preparingVersion) return;
+    const generation = ++downloadPrepareGeneration.current;
     const validation = validateFirmwareIdentity();
     if (validation) {
       setFirmwareError(validation);
       return;
     }
     setDVersion(row.version);
-    setLastFirmware(row);
+    setLastFirmware({
+      row,
+      model: dModel.trim().toUpperCase(),
+      region: dRegion.trim().toUpperCase(),
+    });
     setPreparingVersion(row.version);
     setDownloadEvent(null);
     setDownloadError("");
@@ -607,19 +908,23 @@ export function App() {
           outDir: dOut.trim() || null, outFile: null, threads: connectionThreads, verbose, overwrite: false,
         },
       });
+      if (generation !== downloadPrepareGeneration.current || viewRef.current !== "firmware") return;
+      modalReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setDownloadPlan(plan);
       setDownloadState("idle");
     } catch (error) {
+      if (generation !== downloadPrepareGeneration.current || viewRef.current !== "firmware") return;
       setDownloadState("error");
       setDownloadError(`${row.kind === "beta" ? "This beta may no longer be available from Samsung. " : ""}${errorMessage(error)}`);
     } finally {
-      setPreparingVersion("");
+      if (generation === downloadPrepareGeneration.current) setPreparingVersion("");
     }
   }
 
   async function startDownload() {
     if (!downloadPlan || downloadLocked) return;
     const plan = downloadPlan;
+    if (!canStartDownloadPlan(plan.enoughSpace, plan.conflict, plan.partConflict, allowReplace)) return;
     setDownloadPlan(null);
     setDownloadError("");
     setDownloadState("downloading");
@@ -629,7 +934,7 @@ export function App() {
         req: {
           model: plan.model, region: plan.region, version: plan.version,
           outDir: dOut.trim() || null, outFile: null, threads: connectionThreads, verbose,
-          overwrite: (plan.conflict || plan.partConflict) && allowReplace,
+          overwrite: plan.conflict && allowReplace,
         },
       });
     } catch (error) {
@@ -658,15 +963,25 @@ export function App() {
   }
 
   async function detectDevice(wait = false) {
+    setPitRows([]);
+    setPitSnapshotId(null);
+    setDeviceError("");
     await refreshDeviceStatus(wait, true);
   }
 
   async function printPit() {
-    setDeviceBusy(true);
+    setPitRows([]);
+    setPitSnapshotId(null);
     setDeviceError("");
+    if (!deviceConnected) {
+      setDeviceError("No Download Mode device is connected. Connect the device, then run Detect download mode before reading its PIT.");
+      return;
+    }
+    setDeviceBusy(true);
     try {
-      const rows = await invoke<PitRow[]>("read_device_pit", { backend, wait: true, verbose });
-      setPitRows(rows);
+      const result = await invoke<DevicePitRead>("read_device_pit", { backend, wait: false, verbose });
+      setPitRows(result.rows);
+      setPitSnapshotId(result.snapshotId);
       setDeviceConnected(true);
       setDeviceMessage("PIT loaded from device");
     } catch (error) {
@@ -678,21 +993,36 @@ export function App() {
 
   async function dumpPit() {
     setDeviceError("");
+    if (!deviceConnected || pitRows.length === 0 || !pitSnapshotId) {
+      setPitRows([]);
+      setPitSnapshotId(null);
+      setDeviceError("The PIT view is stale or no device is connected. Detect the Download Mode device and read its PIT again.");
+      return;
+    }
     try {
       const output = await save({ filters: [{ name: "PIT", extensions: ["pit"] }] });
-      if (output) await invoke("dump_device_pit", { backend, wait: true, verbose, output });
+      if (!output) return;
+      setDeviceBusy(true);
+      await invoke("dump_device_pit", { snapshotId: pitSnapshotId, output });
     } catch (error) {
+      setPitRows([]);
+      setPitSnapshotId(null);
+      setDeviceConnected(false);
       setDeviceError(errorMessage(error));
+    } finally {
+      setDeviceBusy(false);
     }
   }
 
   async function rebootDownload() {
     setDeviceBusy(true);
     setDeviceError("");
+    setPitRows([]);
+    setPitSnapshotId(null);
     try {
       await invoke("reboot_to_download", { backend });
-      setDeviceConnected(true);
-      setDeviceMessage("Reboot command sent");
+      setDeviceConnected(false);
+      setDeviceMessage("Reboot command sent · detect the device after it reconnects");
     } catch (error) {
       setDeviceError(errorMessage(error));
     } finally {
@@ -733,29 +1063,14 @@ export function App() {
     }
   }
 
-  async function confirmFlash() {
-    setFlashModal(false);
+  async function startFlashRequest(req: FlashRequestPayload) {
     setFlashState("active");
     setFlashParts({});
     setFlashOverall({ bytes: 0, total: 0, pct: 0 });
-    setFlashMessage(deviceConnected ? "Preparing flash" : "Waiting for device");
+    setFlashMessage("Preparing flash");
     setFlashError("");
     try {
-      await invoke("start_flash", {
-        req: {
-          backend,
-          verbose,
-          wait: flashOpts.wait || !deviceConnected,
-          noReboot: flashOpts.noReboot,
-          repartition: flashOpts.repartition,
-          skipSizeCheck: flashOpts.skipSize,
-          skipMd5: flashOpts.skipMd5,
-          pit: null,
-          folder: flashMode === "folder" ? folder : null,
-          cscMode,
-          packages,
-        },
-      });
+      await invoke("start_flash", { req: { ...req, wait: false } });
     } catch (error) {
       const message = errorMessage(error);
       setFlashState("error");
@@ -764,7 +1079,68 @@ export function App() {
     }
   }
 
-  const destructive = flashOpts.repartition || (flashMode === "folder" && cscMode === "wipe");
+  async function waitForFlashDevice(req: FlashRequestPayload) {
+    const generation = ++flashWaitGeneration.current;
+    setFlashState("waiting");
+    setFlashParts({});
+    setFlashOverall({ bytes: 0, total: 0, pct: 0 });
+    setFlashError("");
+    setFlashMessage("Waiting for a Download Mode device · connect it when ready");
+
+    while (generation === flashWaitGeneration.current) {
+      try {
+        const status = await invoke<DeviceStatus>("detect_download_device", { backend: req.backend, wait: false });
+        if (generation !== flashWaitGeneration.current) return;
+        setDeviceConnected(status.connected);
+        setDeviceMessage(status.label);
+        if (status.connected) {
+          setFlashMessage("Device detected · starting flash");
+          await startFlashRequest(req);
+          return;
+        }
+      } catch (error) {
+        if (generation !== flashWaitGeneration.current) return;
+        setDeviceConnected(false);
+        setPitRows([]);
+        setPitSnapshotId(null);
+        setFlashMessage(`Still waiting · ${errorMessage(error)}`);
+      }
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 1200));
+    }
+  }
+
+  function cancelFlashWait() {
+    flashWaitGeneration.current += 1;
+    setFlashState("idle");
+    setFlashMessage("Device wait cancelled safely");
+    setFlashError("");
+    setCloseBlocked(null);
+  }
+
+  async function confirmFlash() {
+    if (!flashReady || !flashConfirmationValid) return;
+    const req: FlashRequestPayload = {
+      backend,
+      verbose,
+      wait: flashOpts.wait,
+      noReboot: flashOpts.noReboot,
+      repartition: flashOpts.repartition,
+      skipSizeCheck: flashOpts.skipSize,
+      skipMd5: flashOpts.skipMd5,
+      pit: null,
+      folder: flashMode === "folder" ? folder : null,
+      cscMode: cscModeForFlashRequest(flashMode === "folder", packages.csc, cscMode),
+      // The backend re-scans folder mode immediately before flashing so the
+      // preview cannot become a second, stale package source of truth.
+      packages: packagesForFlashRequest(flashMode === "folder", packages),
+      reviewedPackages: flashMode === "folder" ? reviewedFolderPackages : null,
+    };
+    setFlashModal(false);
+    setFlashAcknowledged(false);
+    if (deviceConnected && !flashOpts.wait) await startFlashRequest(req);
+    else void waitForFlashDevice(req);
+  }
+
   const downloadedBytes = downloadEvent?.bytes ?? 0;
   const downloadTotal = downloadEvent?.total ?? 0;
   const downloadSpeed = downloadEvent?.speedBps ?? 0;
@@ -783,9 +1159,30 @@ export function App() {
   const sidebarDeviceMessage = deviceConnected ? deviceMessage : androidDevice?.connected
     ? `${androidDevice.model ?? "Samsung device"}${androidDevice.serial ? ` · ${androidDevice.serial}` : ""}`
     : deviceMessage;
+  const operationMessage = activeOperation === "download"
+    ? downloadState === "paused" ? "Firmware download paused · keep samloader open" : downloadState === "canceling" ? "Stopping download safely · keep samloader open" : "Firmware download in progress · keep samloader open"
+    : activeOperation === "flash-wait"
+      ? "Waiting for a Download Mode device · you can cancel safely"
+      : activeOperation === "flash"
+        ? "Device flash in progress · do not disconnect or close samloader"
+        : activeOperation === "device"
+          ? "Device operation in progress · keep samloader open"
+          : "";
+  const completionAnnouncement = downloadState === "done"
+    ? "Firmware download complete."
+    : downloadState === "cancelled"
+      ? "Firmware download cancelled."
+      : downloadState === "error"
+        ? `Firmware download failed. ${downloadError}`
+        : flashState === "done"
+          ? "Device flash complete."
+          : flashState === "error"
+            ? `Device flash failed. ${flashError}`
+            : "";
 
   return (
     <div className="app" data-theme={theme}>
+      <div className="app-surface" aria-hidden={modalOpen ? true : undefined} inert={modalOpen ? true : undefined}>
       <div className="titlebar">
         <div className="traffic"><span /><span /><span /></div>
         <div className="brand-mark"><Lightning weight="bold" /></div>
@@ -798,12 +1195,12 @@ export function App() {
       <div className="shell">
         <aside className="sidebar">
           <NavGroup label="Firmware">
-            <NavButton icon={<MagnifyingGlass />} label="Firmware Explorer" active={view === "firmware"} onClick={() => setView("firmware")} />
-            <NavButton icon={<Lightning />} label="Flash" active={view === "flash"} onClick={() => setView("flash")} />
+            <NavButton disabled={operationLocked && operationView !== "firmware"} icon={<MagnifyingGlass />} label="Firmware Explorer" active={view === "firmware"} onClick={() => setView("firmware")} />
+            <NavButton disabled={operationLocked && operationView !== "flash"} icon={<Lightning />} label="Flash" active={view === "flash"} onClick={() => setView("flash")} />
           </NavGroup>
           <NavGroup label="Device tools">
-            <NavButton icon={<DeviceMobile />} label="Device & PIT" active={view === "device"} onClick={() => setView("device")} />
-            <NavButton icon={<SealCheck />} label="Verify MD5" active={view === "verify"} onClick={() => setView("verify")} />
+            <NavButton disabled={operationLocked} icon={<DeviceMobile />} label="Device & PIT" active={view === "device"} onClick={() => setView("device")} />
+            <NavButton disabled={operationLocked} icon={<SealCheck />} label="Verify MD5" active={view === "verify"} onClick={() => setView("verify")} />
           </NavGroup>
           <div className="sidebar-spacer" />
           <div className="device-card">
@@ -817,6 +1214,7 @@ export function App() {
             <button
               onClick={() => setView("settings")}
               className="ghost stretch"
+              disabled={operationLocked}
               aria-label="Settings"
               title="Settings"
             >
@@ -836,19 +1234,27 @@ export function App() {
             </div>
           </header>
 
+          {operationLocked && (
+            <div className={`operation-banner ${activeOperation === "flash" ? "danger" : ""}`} role="status" aria-live="polite">
+              <span><StatusDot connected={false} busy />{operationMessage}</span>
+              {operationView && view !== operationView && <button className="ghost" onClick={() => setView(operationView)}>View operation</button>}
+            </div>
+          )}
+          <div className="sr-only" role="status" aria-live="assertive" aria-atomic="true">{completionAnnouncement}</div>
+
           <section className={`content ${view === "flash" ? "flash-content" : ""}`}>
             {view === "firmware" && (
               <div className="stack wide firmware-stack">
                 <Card className="firmware-search-card">
                   <div className="firmware-search-grid">
                     <Field label="Device model">
-                      <input disabled={downloadLocked || Boolean(preparingVersion)} value={dModel} onChange={(e) => { setDModel(e.target.value.toUpperCase()); setDVersion(""); }} placeholder="SM-S931U1" autoComplete="off" aria-describedby="model-help" />
+                      <input disabled={operationLocked || Boolean(preparingVersion)} value={dModel} onChange={(e) => editFirmwareIdentity("model", e.target.value)} placeholder="SM-S931U1" autoComplete="off" aria-describedby="model-help" />
                     </Field>
                     <Field label="Sales code (CSC)">
-                      <input disabled={downloadLocked || Boolean(preparingVersion)} value={dRegion} onChange={(e) => { setDRegion(e.target.value.toUpperCase()); setDVersion(""); }} placeholder="XAA" list="known-csc-codes" autoComplete="off" aria-describedby="csc-help" />
+                      <input disabled={operationLocked || Boolean(preparingVersion)} value={dRegion} onChange={(e) => editFirmwareIdentity("region", e.target.value)} placeholder="XAA" list="known-csc-codes" autoComplete="off" aria-describedby="csc-help" />
                       <datalist id="known-csc-codes">{KNOWN_CSC_CODES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}</datalist>
                     </Field>
-                    <button className="ghost detect-android" disabled={androidDetecting || firmwareState === "active" || downloadLocked || Boolean(preparingVersion)} onClick={useConnectedDevice}>
+                    <button className="ghost detect-android" disabled={androidDetecting || firmwareState === "active" || operationLocked || Boolean(preparingVersion)} onClick={useConnectedDevice}>
                       <DeviceMobile /> {androidDetecting ? "Reading device..." : "Use connected device"}
                     </button>
                   </div>
@@ -861,19 +1267,19 @@ export function App() {
                   <div className="download-options">
                     <Field label="Output folder">
                       <div className="input-action">
-                        <input disabled={downloadLocked || Boolean(preparingVersion)} value={dOut} onChange={(e) => setDOut(e.target.value)} placeholder={appInfo.defaultDownloadDir || "System Downloads folder"} />
-                        <button disabled={downloadLocked || Boolean(preparingVersion)} aria-label="Choose output folder" onClick={() => pickDirectory(setDOut)}><FolderOpen /></button>
+                        <input disabled={operationLocked || Boolean(preparingVersion)} value={dOut} onChange={(e) => setDOut(e.target.value)} placeholder={appInfo.defaultDownloadDir || "System Downloads folder"} />
+                        <button disabled={operationLocked || Boolean(preparingVersion)} aria-label="Choose output folder" onClick={() => pickDirectory(setDOut)}><FolderOpen /></button>
                       </div>
                     </Field>
                     <div className="threads-control" aria-label="Connection strategy">
                       <div className="row between"><span className="label">Connections</span><code className="accent">{manualConnections ? dThreads : "Auto · 8"}</code></div>
                       <div className="connection-choice">
-                        <button disabled={downloadLocked || Boolean(preparingVersion)} className={!manualConnections ? "active" : ""} aria-pressed={!manualConnections} onClick={() => setManualConnections(false)}>Auto</button>
-                        <button disabled={downloadLocked || Boolean(preparingVersion)} className={manualConnections ? "active" : ""} aria-pressed={manualConnections} onClick={() => setManualConnections(true)}>Manual</button>
+                        <button disabled={operationLocked || Boolean(preparingVersion)} className={!manualConnections ? "active" : ""} aria-pressed={!manualConnections} onClick={() => setManualConnections(false)}>Auto</button>
+                        <button disabled={operationLocked || Boolean(preparingVersion)} className={manualConnections ? "active" : ""} aria-pressed={manualConnections} onClick={() => setManualConnections(true)}>Manual</button>
                       </div>
-                      {manualConnections ? <input disabled={downloadLocked || Boolean(preparingVersion)} aria-label="Parallel download connections" className="range" type="range" min={1} max={16} value={dThreads} onChange={(e) => setDThreads(Number(e.target.value))} /> : <small>Starts at 8 and reduces if the server throttles.</small>}
+                      {manualConnections ? <input disabled={operationLocked || Boolean(preparingVersion)} aria-label="Parallel download connections" className="range" type="range" min={1} max={16} value={dThreads} onChange={(e) => setDThreads(Number(e.target.value))} /> : <small>Starts at 8 and reduces if the server throttles.</small>}
                     </div>
-                    <button className="primary search-button" disabled={firmwareState === "active" || Boolean(preparingVersion) || downloadLocked} onClick={() => searchFirmwares()}>
+                    <button className="primary search-button" disabled={firmwareState === "active" || Boolean(preparingVersion) || operationLocked} onClick={() => searchFirmwares()}>
                       <ArrowsClockwise className={firmwareState === "active" ? "spin" : ""} /> {firmwareState === "active" ? "Searching..." : "Search firmwares"}
                     </button>
                   </div>
@@ -891,18 +1297,20 @@ export function App() {
                       </div>
                     </div>
                     {firmwareResults.beta.length > 0 && <div className="beta-note"><Warning /> Beta records can remain listed after Samsung removes the file. Availability is checked before download.</div>}
-                    <div className="firmware-table" role="table" aria-label="Available firmware versions">
-                      <div className="firmware-table-head" role="row"><span>Version</span><span>Channel</span><span>Availability</span><span /></div>
-                      {visibleFirmwareRows.map((row) => (
-                        <div className="firmware-row" role="row" key={`${row.kind}-${row.version}`}>
-                          <code title={row.version}>{row.version}</code>
-                          <span className={`firmware-badge ${row.kind}`}>{row.kind === "latest" ? "Latest stable" : row.kind}</span>
-                          <span className="availability">Checked during preflight</span>
-                          <button className="ghost" disabled={downloadLocked || Boolean(preparingVersion)} onClick={() => prepareDownload(row)}>
-                            {preparingVersion === row.version ? <ArrowsClockwise className="spin" /> : <DownloadSimple />} {preparingVersion === row.version ? "Checking..." : "Download"}
-                          </button>
-                        </div>
-                      ))}
+                    <div className="firmware-table-wrap">
+                      <table className="firmware-table" aria-label="Available firmware versions">
+                        <thead><tr className="firmware-table-head"><th scope="col">Version</th><th scope="col">Channel</th><th scope="col">Availability</th><th scope="col"><span className="sr-only">Action</span></th></tr></thead>
+                        <tbody>{visibleFirmwareRows.map((row) => (
+                          <tr className="firmware-row" key={`${row.kind}-${row.version}`}>
+                            <td><code title={row.version}>{row.version}</code></td>
+                            <td><span className={`firmware-badge ${row.kind}`}>{row.kind === "latest" ? "Latest stable" : row.kind}</span></td>
+                            <td className="availability">Checked during preflight</td>
+                            <td><button className="ghost" disabled={operationLocked || Boolean(preparingVersion)} onClick={() => prepareDownload(row)}>
+                              {preparingVersion === row.version ? <ArrowsClockwise className="spin" /> : <DownloadSimple />} {preparingVersion === row.version ? "Checking..." : "Download"}
+                            </button></td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
                     </div>
                     {visibleFirmwareRows.length === 0 && <div className="empty-state">No firmware matches this channel and version search.</div>}
                   </Card>
@@ -929,7 +1337,7 @@ export function App() {
                       {downloadState === "downloading" && <button className="ghost" disabled={downloadControlBusy} onClick={() => controlDownload("pause_download")}><Pause /> Pause</button>}
                       {downloadState === "paused" && <button className="primary compact-button" disabled={downloadControlBusy} onClick={() => controlDownload("resume_download")}><Play /> Resume</button>}
                       {["downloading", "paused"].includes(downloadState) && <button className="ghost danger-outline" disabled={downloadControlBusy} onClick={() => controlDownload("cancel_download")}><X /> Cancel</button>}
-                      {["error", "cancelled"].includes(downloadState) && lastFirmware && <button className="primary compact-button" onClick={() => prepareDownload(lastFirmware)}><ArrowsClockwise /> Retry</button>}
+                      {["error", "cancelled"].includes(downloadState) && lastFirmware && firmwareIdentityMatches(lastFirmware.model, lastFirmware.region, dModel, dRegion) && <button className="primary compact-button" onClick={() => prepareDownload(lastFirmware.row)}><ArrowsClockwise /> Retry</button>}
                       {["done", "error", "cancelled"].includes(downloadState) && <button className="ghost" onClick={() => { setDownloadState("idle"); setDownloadEvent(null); setDownloadError(""); setDVersion(""); }}>Clear</button>}
                     </div>
                   </Card>
@@ -939,17 +1347,17 @@ export function App() {
 
             {view === "flash" && (
               <div className="stack wide flash-stack">
-                <div className="flash-config">
+                <fieldset className="flash-config operation-fieldset" disabled={operationLocked}>
                   <div className="segments">
-                    <button className={flashMode === "pkg" ? "active" : ""} onClick={() => { folderScanGeneration.current += 1; setFolderScanBusy(false); setFlashMode("pkg"); setPackages({}); setFlashError(""); }}>Package files</button>
-                    <button className={flashMode === "folder" ? "active" : ""} onClick={() => { folderScanGeneration.current += 1; setFolderScanBusy(false); setFlashMode("folder"); setPackages({}); setFlashError(""); }}>Firmware folder</button>
+                    <button className={flashMode === "pkg" ? "active" : ""} onClick={() => { folderScanGeneration.current += 1; setFolderScanBusy(false); setFlashMode("pkg"); setPackages({}); setReviewedFolderPackages([]); setFlashError(""); }}>Package files</button>
+                    <button className={flashMode === "folder" ? "active" : ""} onClick={() => { folderScanGeneration.current += 1; setFolderScanBusy(false); setFlashMode("folder"); setPackages({}); setReviewedFolderPackages([]); setFlashError(""); }}>Firmware folder</button>
                   </div>
 
                   {flashMode === "folder" ? (
                     <Card className="flash-folder-card">
                       <Field label="Extracted firmware folder">
                         <div className="input-action">
-                          <input value={folder} onChange={(e) => { folderScanGeneration.current += 1; setFolderScanBusy(false); setFolder(e.target.value); setPackages({}); setFlashError(""); }} placeholder="D:\\SAMFW..." />
+                          <input value={folder} onChange={(e) => { folderScanGeneration.current += 1; setFolderScanBusy(false); setFolder(e.target.value); setPackages({}); setReviewedFolderPackages([]); setFlashError(""); }} placeholder="D:\\SAMFW..." />
                           <button aria-label="Scan typed firmware folder" disabled={!folder.trim() || folderScanBusy} onClick={() => scanFolder()}><MagnifyingGlass className={folderScanBusy ? "spin" : ""} /></button>
                           <button aria-label="Choose firmware folder" disabled={folderScanBusy} onClick={async () => {
                             setFlashError("");
@@ -958,6 +1366,7 @@ export function App() {
                               if (typeof selected === "string") {
                                 setFolder(selected);
                                 setPackages({});
+                                setReviewedFolderPackages([]);
                                 await scanFolder(selected, cscMode);
                               }
                             } catch (error) {
@@ -991,14 +1400,19 @@ export function App() {
                           </div>
                         ))}
                       </div>
+                      {manualCscFactoryReset && <div className="warning-row"><WarningOctagon /> The selected regular CSC package will factory reset the device. Use HOME_CSC to preserve data.</div>}
                     </Card>
+                  )}
+
+                  {unverifiedTarPackages.length > 0 && (
+                    <div className="warning-row" role="status"><Warning /> {unverifiedTarPackages.length} selected {unverifiedTarPackages.length === 1 ? "package is" : "packages are"} plain .tar with no MD5 footer and cannot be integrity-verified.</div>
                   )}
 
                   <Card className="flash-options-card">
                     <span className="label">Flash behavior</span>
                     <div className="option-grid">
                       <CheckOption checked={flashOpts.noReboot} title="No auto-reboot" hint="Stay in download mode after flashing" onClick={() => setFlashOpts((o) => ({ ...o, noReboot: !o.noReboot }))} />
-                      <CheckOption checked={flashOpts.wait} title="Wait for device" hint="Block until a device connects" onClick={() => setFlashOpts((o) => ({ ...o, wait: !o.wait }))} />
+                      <CheckOption checked={flashOpts.wait} title="Wait for device" hint="Poll in the app until a device connects; waiting can be cancelled" onClick={() => setFlashOpts((o) => ({ ...o, wait: !o.wait }))} />
                     </div>
                     <details className="advanced-options" open={flashOpts.skipMd5 || flashOpts.skipSize || flashOpts.repartition || undefined}>
                       <summary>Advanced and risky options</summary>
@@ -1006,12 +1420,14 @@ export function App() {
                       <div className="option-grid">
                         <CheckOption checked={flashOpts.skipMd5} title="Skip MD5 check" hint="Disables package integrity protection" onClick={() => setFlashOpts((o) => ({ ...o, skipMd5: !o.skipMd5 }))} />
                         <CheckOption checked={flashOpts.skipSize} title="Skip size check" hint="Disables partition fit protection" onClick={() => setFlashOpts((o) => ({ ...o, skipSize: !o.skipSize }))} />
-                        <CheckOption danger checked={flashOpts.repartition} title="Repartition" hint="Rewrites the partition table, requires a PIT and all packages. Risk of brick." onClick={() => setFlashOpts((o) => ({ ...o, repartition: !o.repartition }))} />
+                        <CheckOption danger checked={flashOpts.repartition} title="Repartition" hint="Rewrites the PIT and requires BL, AP, CP, and regular CSC (factory reset). USERDATA is optional. Risk of brick." onClick={() => setFlashOpts((o) => ({ ...o, repartition: !o.repartition }))} />
                       </div>
                     </details>
                   </Card>
+                  {flashOpts.repartition && missingCorePackages.length > 0 && <div className="inline-error" role="alert"><WarningOctagon /> Repartition is locked until these core slots are selected: {missingCorePackages.map((slot) => slot.toUpperCase()).join(", ")}.</div>}
+                  {flashOpts.repartition && missingCorePackages.length === 0 && !repartitionHasWipeCsc && <div className="inline-error" role="alert"><WarningOctagon /> Repartition requires regular CSC and a factory reset. HOME_CSC cannot be used; select CSC · factory reset.</div>}
                   {flashError && <div className="inline-error" role="alert"><WarningOctagon /> {flashError}</div>}
-                </div>
+                </fieldset>
 
                 <div className={`flash-dock ${flashState === "error" ? "danger-card" : ""}`}>
                   {flashState === "idle" ? (
@@ -1022,16 +1438,16 @@ export function App() {
                           ? folderScanBusy ? "Scanning firmware folder" : selectedPackages.length ? `Folder scanned · ${selectedPackages.length} package${selectedPackages.length === 1 ? "" : "s"}` : folder ? "Scan the firmware folder" : "Select a firmware folder"
                           : `${selectedPackages.length} package${selectedPackages.length === 1 ? "" : "s"} ready`}
                         {" · "}
-                        {deviceConnected ? "device in download mode" : "will wait for a device"}
+                        {deviceConnected ? "device in download mode" : flashOpts.wait ? "waiting is enabled" : "connect a device or enable Wait for device"}
                       </span>
-                      <button className={destructive ? "primary danger" : "primary"} disabled={folderScanBusy || selectedPackages.length === 0} onClick={() => setFlashModal(true)}>
+                      <button className={destructive ? "primary danger" : "primary"} disabled={!flashReady} title={!flashReady ? flashReadinessMessage(selectedPackages.length, folderScanBusy, deviceConnected, flashOpts.wait, flashOpts.repartition, missingCorePackages, repartitionHasWipeCsc, folderReviewValid) : undefined} onClick={() => { modalReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setFlashAcknowledged(false); setFlashModal(true); }}>
                         <Lightning weight="bold" /> Flash device
                       </button>
                     </div>
                   ) : (
                     <div className="dock-live">
                       <div className="dock-head">
-                        <div className="row"><Usb className={flashState === "active" ? "blink" : ""} /><strong>{flashState === "done" ? "Flash complete" : flashState === "error" ? "Flash failed" : "Flashing partitions"}</strong></div>
+                        <div className="row"><Usb className={["waiting", "active"].includes(flashState) ? "blink" : ""} /><strong>{flashState === "waiting" ? "Waiting for device" : flashState === "done" ? "Flash complete" : flashState === "error" ? "Flash failed" : "Flashing partitions"}</strong></div>
                         <code>{Math.round(flashOverall.pct)}%</code>
                       </div>
                       <Progress value={flashOverall.pct} ok={flashState === "done"} />
@@ -1042,7 +1458,9 @@ export function App() {
                       <div className="dock-parts">
                         {Object.entries(flashParts).map(([name, part]) => <PartitionRow key={name} name={name} part={part} />)}
                       </div>
-                      {flashState !== "active" && (
+                      {flashState === "waiting" ? (
+                        <div className="dock-actions"><button className="ghost danger-outline" onClick={cancelFlashWait}><X /> Cancel waiting</button></div>
+                      ) : flashState !== "active" && (
                         <div className="dock-actions">
                           <button className="ghost" onClick={() => { setFlashState("idle"); setFlashParts({}); setFlashOverall({ bytes: 0, total: 0, pct: 0 }); setFlashMessage(""); }}>
                             Clear
@@ -1058,21 +1476,23 @@ export function App() {
             {view === "device" && (
               <div className="stack wide">
                 <div className="action-cards">
-                  <ActionCard disabled={deviceBusy} icon={<MagnifyingGlass />} title="Detect download mode" text="Scan the selected USB backend" onClick={() => detectDevice(false)} />
-                  <ActionCard disabled={deviceBusy} icon={<Table />} title="Read PIT" text="Inspect the device partition table" onClick={printPit} />
-                  <ActionCard disabled={deviceBusy} icon={<ArrowUDownLeft />} title="Reboot to download" text="Send the supported reboot command" onClick={rebootDownload} />
+                  <ActionCard disabled={deviceBusy || operationLocked} icon={<MagnifyingGlass />} title="Detect download mode" text="Scan once using the selected USB backend" onClick={() => detectDevice(false)} />
+                  <ActionCard disabled={deviceBusy || operationLocked} icon={<Table />} title="Read PIT" text="Requires a detected Download Mode device" onClick={printPit} />
+                  <ActionCard disabled={deviceBusy || operationLocked} icon={<ArrowUDownLeft />} title="Reboot to download" text="Send the supported reboot command" onClick={rebootDownload} />
                 </div>
                 {deviceError && <div className="inline-error" role="alert"><WarningOctagon /> {deviceError}</div>}
                 {pitRows.length > 0 && (
                   <Card rise>
-                    <div className="row between"><strong>PIT entries</strong><button className="ghost" onClick={dumpPit}><DownloadSimple /> Dump to file</button></div>
-                    <div className="pit-table">
-                      <div className="pit-head"><span>ID</span><span>Partition</span><span>Flash file</span><span>Size</span></div>
-                      {pitRows.map((row) => (
-                        <div className="pit-row" key={`${row.id}-${row.partition}`}>
-                          <code>{row.id}</code><strong>{row.partition}</strong><code>{row.flashFile}</code><code>{fmtBytes(row.size)}</code>
-                        </div>
-                      ))}
+                    <div className="row between"><strong>PIT entries</strong><button className="ghost" disabled={operationLocked} onClick={dumpPit}><DownloadSimple /> Dump to file</button></div>
+                    <div className="pit-table-wrap">
+                      <table className="pit-table" aria-label="Device partition table">
+                        <thead><tr className="pit-head"><th scope="col">ID</th><th scope="col">Partition</th><th scope="col">Flash file</th><th scope="col">Size</th></tr></thead>
+                        <tbody>{pitRows.map((row) => (
+                          <tr className="pit-row" key={`${row.id}-${row.partition}`}>
+                            <td><code>{row.id}</code></td><td><strong>{row.partition}</strong></td><td><code>{row.flashFile}</code></td><td><code>{fmtBytes(row.size)}</code></td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
                     </div>
                   </Card>
                 )}
@@ -1081,7 +1501,7 @@ export function App() {
 
             {view === "verify" && (
               <div className="stack narrow">
-                <button className="dropzone" onClick={addVerifyFiles}><FilePlus /><strong>Add .tar.md5 files</strong><span>MD5 footer verification</span></button>
+                <button className="dropzone" disabled={operationLocked} onClick={addVerifyFiles}><FilePlus /><strong>Add .tar.md5 files</strong><span>MD5 footer verification</span></button>
                 {verifyError && <div className="inline-error" role="alert"><WarningOctagon /> {verifyError}</div>}
                 {verifyRows.map((row) => (
                   <div className={`file-row ${row.status === "error" ? "file-error" : ""}`} key={row.file}>
@@ -1091,7 +1511,7 @@ export function App() {
                     <button className="row-remove" disabled={row.status === "checking"} aria-label={`Remove ${basename(row.file)}`} onClick={() => setVerifyRows((rows) => rows.filter((item) => item.file !== row.file))}><X /></button>
                   </div>
                 ))}
-                {verifyRows.length > 0 && <div className="row"><button className="primary" disabled={verifyRows.some((row) => row.status === "checking")} onClick={verifyAll}><SealCheck weight="bold" /> Verify all</button><button className="ghost" disabled={verifyRows.some((row) => row.status === "checking")} onClick={() => { setVerifyRows([]); setVerifyError(""); }}>Clear list</button></div>}
+                {verifyRows.length > 0 && <div className="row"><button className="primary" disabled={operationLocked || verifyRows.some((row) => row.status === "checking")} onClick={verifyAll}><SealCheck weight="bold" /> Verify all</button><button className="ghost" disabled={operationLocked || verifyRows.some((row) => row.status === "checking")} onClick={() => { setVerifyRows([]); setVerifyError(""); }}>Clear list</button></div>}
               </div>
             )}
 
@@ -1102,7 +1522,7 @@ export function App() {
                   <p className="settings-help">Used only for download-mode detection and flashing. Keep the recommended default unless device detection fails.</p>
                   <div className="backend-list">
                     {["vcom", "nusb", "libusb"].map((item) => (
-                      <button key={item} className={`backend-row ${backend === item ? "active" : ""}`} disabled={!appInfo.backends.includes(item)} onClick={() => setBackend(item)}>
+                      <button key={item} className={`backend-row ${backend === item ? "active" : ""}`} disabled={operationLocked || !appInfo.backends.includes(item)} onClick={() => setBackend(item)}>
                         <span><strong>{item}{item === appInfo.defaultBackend && <em className="recommended">Recommended</em>}</strong><small>{backendCopy(item, appInfo.backends.includes(item))}</small></span>
                         {backend === item && <CheckCircle weight="fill" />}
                       </button>
@@ -1110,19 +1530,36 @@ export function App() {
                   </div>
                 </Card>
                 <Card>
-                  <div className="setting-row"><span><strong>Verbose output</strong><small>Emit detailed backend logs</small></span><Switch on={verbose} onClick={() => setVerbose(!verbose)} /></div>
+                  <div className="setting-row"><span><strong>Verbose output</strong><small>Show extra download details. For full USB diagnostics, run the visible CLI command in PowerShell.</small></span><Switch label="Verbose output" disabled={operationLocked} on={verbose} onClick={() => setVerbose(!verbose)} /></div>
                   <div className="setting-row"><span><strong>Appearance</strong><small>{theme === "dark" ? "Dark" : "Light"} theme</small></span><button className="ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun /> : <Moon />} Toggle</button></div>
+                  <div className="setting-row"><span><strong>Diagnostic logs</strong><small>Bounded desktop logs are retained at <code>%LOCALAPPDATA%\com.samloader.desktop\logs</code>.</small></span></div>
+                </Card>
+                <Card className="about-card">
+                  <div className="row between"><div><span className="label">About & licenses</span><h2>samloader <code>v{appInfo.version || "2.0.2"}</code></h2></div><SealCheck weight="fill" /></div>
+                  <p>A consumer desktop interface for Samsung firmware discovery, download, verification, and flashing.</p>
+                  <div className="license-list">
+                    <div><strong>samloader</strong><span>Apache License 2.0</span></div>
+                    <div><strong>Instrument Sans</strong><span>SIL Open Font License 1.1</span></div>
+                    <div><strong>JetBrains Mono</strong><span>SIL Open Font License 1.1</span></div>
+                  </div>
+                  <p className="settings-help">Project license texts, third-party notices, and a generated dependency license inventory are embedded in this build.</p>
+                  <div className="license-actions">
+                    <a className="ghost" href="./licenses/THIRD_PARTY_NOTICES.md" download>Third-party notices</a>
+                    <a className="ghost" href="./licenses/DEPENDENCY_LICENSES.md" download>Dependency inventory</a>
+                  </div>
                 </Card>
               </div>
             )}
           </section>
 
-          <footer className="command-bar">
+          <footer className={`command-bar ${commandExpanded ? "expanded" : ""}`}>
             <TerminalWindow />
-            <code>{command}</code>
-            <button onClick={copyCommand}>{copied ? <Check /> : <Copy />}{copied ? "Copied" : "Copy"}</button>
+            <code title={command} tabIndex={0} aria-label="Equivalent PowerShell CLI command">{command}</code>
+            <button className="command-expand" aria-expanded={commandExpanded} onClick={() => setCommandExpanded((expanded) => !expanded)}>{commandExpanded ? "Collapse" : "Expand"}</button>
+            <button aria-live="polite" title={copyFailed ? "Select and copy the visible command manually." : undefined} onClick={copyCommand}>{copied ? <Check /> : <Copy />}{copied ? "Copied" : copyFailed ? "Copy failed" : "Copy"}</button>
           </footer>
         </main>
+      </div>
       </div>
 
       {downloadPlan && (
@@ -1143,13 +1580,13 @@ export function App() {
             {(downloadPlan.conflict || downloadPlan.partConflict) && (
               <div className="conflict-box">
                 <div className="row"><WarningOctagon /><strong>{downloadPlan.conflict ? "A completed file already exists." : "An interrupted partial download exists."}</strong></div>
-                {downloadPlan.partConflict && <p>Resume is not supported for this file. The partial file at <code>{downloadPlan.partPath}</code> will be replaced and the download will restart.</p>}
-                <label className="replace-confirm"><input type="checkbox" checked={allowReplace} onChange={(event) => setAllowReplace(event.target.checked)} /> Replace the existing {downloadPlan.conflict && downloadPlan.partConflict ? "files" : "file"}</label>
+                {downloadPlan.partConflict && <p>Resume is not supported. To avoid deleting another running process's data, samloader will not replace <code>{downloadPlan.partPath}</code>. Confirm no download is using it, remove it manually, then prepare the download again.</p>}
+                {downloadPlan.conflict && <label className="replace-confirm"><input type="checkbox" checked={allowReplace} onChange={(event) => setAllowReplace(event.target.checked)} /> Replace the existing completed file</label>}
               </div>
             )}
             <div className="modal-actions">
               <button ref={downloadCancelRef} className="ghost" onClick={() => { setDownloadPlan(null); setDownloadState("idle"); }}>Cancel</button>
-              <button className="primary" disabled={!downloadPlan.enoughSpace || ((downloadPlan.conflict || downloadPlan.partConflict) && !allowReplace)} onClick={startDownload}>Start download</button>
+              <button className="primary" disabled={!canStartDownloadPlan(downloadPlan.enoughSpace, downloadPlan.conflict, downloadPlan.partConflict, allowReplace)} onClick={startDownload}>Start download</button>
             </div>
           </div>
         </div>
@@ -1157,22 +1594,45 @@ export function App() {
 
       {flashModal && (
         <div className="modal-backdrop">
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="flash-review-title">
+          <div className="modal flash-review" role="dialog" aria-modal="true" aria-labelledby="flash-review-title" aria-describedby="flash-review-description">
             <div className="row">
               <div className={destructive ? "modal-icon danger" : "modal-icon"}>{destructive ? <WarningOctagon weight="fill" /> : <Lightning weight="fill" />}</div>
               <h2 id="flash-review-title">{destructive ? "Confirm destructive flash" : "Confirm flash"}</h2>
             </div>
-            <p>Review what will be written. Flashing the wrong firmware can brick your device.</p>
+            <p id="flash-review-description">Review every detail. Firmware for the wrong model, bootloader, or region can permanently damage the device.</p>
             <div className="modal-list">
               <ModalItem label="Mode" value={flashMode === "folder" ? "Firmware folder" : "Package files"} />
               <ModalItem label="CSC" value={flashMode === "folder" ? `${cscLabel(cscMode)} · ${cscMode === "wipe" ? "factory reset" : "keep data"}` : basename(packages.csc ?? "not selected")} />
-              <ModalItem label="Packages" value={flashMode === "folder" ? `${selectedPackages.length} auto-selected` : `${selectedPackages.length} selected`} />
-              <ModalItem label="Device" value={deviceConnected ? "connected" : "not connected · will wait"} />
+              <ModalItem label="Packages" value={selectedPackages.map(basename).join(", ")} />
+              <ModalItem label="Integrity" value={unverifiedTarPackages.length > 0 ? `${unverifiedTarPackages.length} plain .tar package${unverifiedTarPackages.length === 1 ? "" : "s"} cannot be MD5-verified` : flashOpts.skipMd5 ? "MD5 verification disabled" : "MD5 footer verification enabled"} />
+              <ModalItem label="Device" value={deviceConnected ? deviceMessage : flashOpts.wait ? "not connected · cancellable waiting enabled" : "disconnected · return and enable waiting"} />
+              {flashOpts.repartition && <ModalItem label="PIT" value="Repartition enabled · BL, AP, CP, and regular CSC selected" />}
             </div>
-            {destructive && <div className="warning-row"><WarningOctagon />{flashOpts.repartition ? "Repartition rewrites the device partition table." : "Regular CSC performs a factory reset."}</div>}
+            {destructive && <div className="warning-row"><WarningOctagon />{flashOpts.repartition ? "Repartition rewrites the device partition table and can brick an incompatible device." : "The selected regular CSC performs a factory reset and erases user data."}</div>}
+            {unverifiedTarPackages.length > 0 && <div className="warning-row"><Warning /> Plain .tar packages have no MD5 footer. Their integrity cannot be verified before flashing.</div>}
+            {(flashOpts.skipMd5 || flashOpts.skipSize) && <div className="inline-error" role="alert"><WarningOctagon /> Protection disabled: {[flashOpts.skipMd5 && "MD5 verification", flashOpts.skipSize && "partition size checks"].filter(Boolean).join(" and ")}.</div>}
+            <label className="flash-acknowledge"><input type="checkbox" checked={flashAcknowledged} onChange={(event) => setFlashAcknowledged(event.target.checked)} /> I verified that these packages match the model and bootloader of the device I intend to flash.</label>
             <div className="modal-actions">
-              <button ref={flashCancelRef} className="ghost" onClick={() => setFlashModal(false)}>Cancel</button>
-              <button className={destructive ? "primary danger" : "primary"} onClick={confirmFlash}>{deviceConnected ? "Flash now" : "Wait for device & flash"}</button>
+              <button ref={flashCancelRef} className="ghost" onClick={() => { setFlashModal(false); setFlashAcknowledged(false); }}>Cancel</button>
+              <button className={destructive ? "primary danger" : "primary"} disabled={!flashConfirmationValid || !flashReady} onClick={confirmFlash}>{deviceConnected ? flashOpts.wait ? "Check device & flash" : "Flash now" : flashOpts.wait ? "Wait for device & flash" : "Device disconnected"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {closeBlocked && (
+        <div className="modal-backdrop">
+          <div className="modal close-blocked" role="alertdialog" aria-modal="true" aria-labelledby="close-blocked-title" aria-describedby="close-blocked-description">
+            <div className="row">
+              <div className={closeBlocked === "flash" ? "modal-icon danger" : "modal-icon"}><WarningOctagon weight="fill" /></div>
+              <div><h2 id="close-blocked-title">Keep samloader open</h2><p id="close-blocked-description">{closeBlockedMessage || (closeBlocked === "flash" ? "Closing now would interrupt a device flash and may leave the device unusable." : closeBlocked === "flash-wait" ? "The app is waiting for a device. Cancel waiting before you close it." : closeBlocked === "device" ? "A device operation is still finishing. Keep the app open and try again when it completes." : "The firmware download must finish or be cancelled and cleaned up before closing.")}</p></div>
+            </div>
+            <div className="modal-actions">
+              <button ref={closeCancelRef} className="ghost" onClick={() => { setCloseBlocked(null); if (operationView) setView(operationView); }}>Keep app open</button>
+              {closeBlocked === "flash-wait" && <button className="ghost danger-outline" onClick={cancelFlashWait}><X /> Cancel waiting</button>}
+              {closeBlocked === "download" && <button className="ghost danger-outline" disabled={downloadState === "canceling" || downloadControlBusy} onClick={() => { setCloseBlocked(null); void controlDownload("cancel_download"); }}><X /> {downloadState === "canceling" ? "Stopping..." : "Cancel download"}</button>}
+              {closeBlocked === "flash" && <button className="primary" disabled>Flash must finish</button>}
+              {closeBlocked === "device" && <button className="primary" disabled>Device operation must finish</button>}
             </div>
           </div>
         </div>
@@ -1185,12 +1645,12 @@ function NavGroup({ label, children }: { label: string; children: React.ReactNod
   return <div className="nav-group"><div className="nav-label">{label}</div>{children}</div>;
 }
 
-function NavButton({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
-  return <button className={`nav-button ${active ? "active" : ""}`} aria-label={label} title={label} aria-current={active ? "page" : undefined} onClick={onClick}>{icon}<span>{label}</span></button>;
+function NavButton({ icon, label, active, onClick, disabled }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void; disabled?: boolean }) {
+  return <button className={`nav-button ${active ? "active" : ""}`} disabled={disabled} aria-label={label} title={label} aria-current={active ? "page" : undefined} onClick={onClick}>{icon}<span>{label}</span></button>;
 }
 
 function StatusDot({ connected, busy }: { connected: boolean; busy: boolean }) {
-  return <span className={`status-dot ${connected ? "ok" : ""} ${busy ? "busy" : ""}`} />;
+  return <span aria-hidden="true" className={`status-dot ${connected ? "ok" : ""} ${busy ? "busy" : ""}`} />;
 }
 
 function Card({ children, rise, className = "" }: { children: React.ReactNode; rise?: boolean; className?: string }) {
@@ -1222,8 +1682,8 @@ function ActionCard({ icon, title, text, onClick, disabled }: { icon: React.Reac
   return <button className="action-card" disabled={disabled} onClick={onClick}>{icon}<strong>{title}</strong><span>{text}</span></button>;
 }
 
-function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
-  return <button className={`switch ${on ? "on" : ""}`} role="switch" aria-checked={on} onClick={onClick}><span /></button>;
+function Switch({ on, onClick, label, disabled }: { on: boolean; onClick: () => void; label: string; disabled?: boolean }) {
+  return <button className={`switch ${on ? "on" : ""}`} type="button" role="switch" aria-label={label} aria-checked={on} disabled={disabled} onClick={onClick}><span /></button>;
 }
 
 function ModalItem({ label, value }: { label: string; value: string }) {
@@ -1239,6 +1699,25 @@ function backendCopy(backend: string, available: boolean) {
   if (backend === "vcom") return "Samsung USB serial driver";
   if (backend === "nusb") return "native USB backend";
   return "generic libusb backend";
+}
+
+export function flashReadinessMessage(
+  selectedCount: number,
+  scanning: boolean,
+  connected: boolean,
+  waitEnabled: boolean,
+  repartition: boolean,
+  missingSlots: readonly string[],
+  repartitionHasWipeCsc = true,
+  folderReviewValid = true,
+) {
+  if (scanning) return "Wait for the firmware folder scan to finish.";
+  if (selectedCount === 0) return "Select at least one firmware package.";
+  if (!folderReviewValid) return "Scan the firmware folder again before review.";
+  if (repartition && missingSlots.length > 0) return `Repartition requires ${missingSlots.map((slot) => slot.toUpperCase()).join(", ")}.`;
+  if (repartition && !repartitionHasWipeCsc) return "Repartition requires regular CSC (factory reset); HOME_CSC cannot be used.";
+  if (!connected && !waitEnabled) return "Connect a Download Mode device or enable Wait for device.";
+  return "Ready to review flash.";
 }
 
 function downloadStatusCopy(state: DownloadState) {

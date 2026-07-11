@@ -13,7 +13,25 @@
 // limitations under the License.
 
 use roxmltree::{Document, Node};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+/// Escapes untrusted values before placing them in XML element text. Keep all
+/// request builders on this one path so server metadata and caller-provided
+/// model/region/version values cannot alter the document structure.
+fn escape_xml_text(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&apos;"),
+            _ => escaped.push(character),
+        }
+    }
+    escaped
+}
 
 fn get_logic_check(inp: &str, nonce: &str) -> String {
     let mut out = String::new();
@@ -81,10 +99,16 @@ pub(crate) fn parse_version_xml(xml: &str) -> Option<VersionInfo> {
         }
     }
 
-    upgrade_entries.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    upgrade_entries.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2))
+    });
+    let mut seen = BTreeSet::new();
     let previous: Vec<String> = upgrade_entries
         .into_iter()
         .map(|(_, _, version)| version)
+        .filter(|version| seen.insert(version.clone()))
         .collect();
 
     Some(VersionInfo {
@@ -95,7 +119,10 @@ pub(crate) fn parse_version_xml(xml: &str) -> Option<VersionInfo> {
 }
 
 pub(crate) fn binary_inform_req_xml(model: &str, region: &str, fw: &str, nonce: &str) -> String {
-    let logic_check = get_logic_check(fw, nonce);
+    let logic_check = escape_xml_text(&get_logic_check(fw, nonce));
+    let fw = escape_xml_text(fw);
+    let region = escape_xml_text(region);
+    let model = escape_xml_text(model);
 
     format!(
         r#"<FUSMsg>
@@ -127,11 +154,19 @@ pub(crate) fn binary_init_req_xml(
     model_type: &str,
     region: &str,
 ) -> String {
-    let start = filename.len().saturating_sub(25);
-    let end = filename.len().saturating_sub(9);
-    let checkinp = &filename[start..end];
+    // Work in characters rather than byte indexes. FUS normally supplies an
+    // ASCII filename, but malformed/non-ASCII metadata must never panic at a
+    // UTF-8 boundary while constructing the authorization request.
+    let filename_chars: Vec<char> = filename.chars().collect();
+    let start = filename_chars.len().saturating_sub(25);
+    let end = filename_chars.len().saturating_sub(9);
+    let checkinp: String = filename_chars[start..end].iter().collect();
 
-    let logic_check = get_logic_check(checkinp, nonce);
+    let filename = escape_xml_text(filename);
+    let fw = escape_xml_text(fw);
+    let region = escape_xml_text(region);
+    let model_type = escape_xml_text(model_type);
+    let logic_check = escape_xml_text(&get_logic_check(&checkinp, nonce));
 
     format!(
         r#"<FUSMsg>
@@ -150,6 +185,8 @@ pub(crate) fn binary_init_req_xml(
 }
 
 pub(crate) fn history_req_xml(model: &str, region: &str) -> String {
+    let model = escape_xml_text(model);
+    let region = escape_xml_text(region);
     format!(
         r#"<FUSMsg>
 <FUSHdr><ProtoVer>1</ProtoVer><SessionID>0</SessionID><MsgID>1</MsgID></FUSHdr>
@@ -190,8 +227,10 @@ fn get_xml_node_data(node: Node) -> HashMap<String, String> {
     node.descendants()
         .filter(|n| n.has_tag_name("Data"))
         .for_each(|n| {
-            if let Some(v) = n.text() {
-                let parent = n.parent().unwrap();
+            if let Some(v) = n.text()
+                && let Some(parent) = n.parent()
+                && parent.is_element()
+            {
                 kv.insert(parent.tag_name().name().to_string(), v.to_string());
             }
         });
@@ -260,7 +299,7 @@ impl BinaryInfo {
 
 pub(crate) fn parse_history_xml(xml: &str) -> Option<VersionInfo> {
     let doc = Document::parse(xml).ok()?;
-    let mut consolidated: HashMap<(String, String, i64), BinaryInfo> = HashMap::new();
+    let mut consolidated: BTreeMap<(String, String, i64), BinaryInfo> = BTreeMap::new();
 
     for node in doc.descendants().filter(|n| n.has_tag_name("BINARY_INFO")) {
         let kv = get_xml_node_data(node);
@@ -287,26 +326,30 @@ pub(crate) fn parse_history_xml(xml: &str) -> Option<VersionInfo> {
 
     // Chronological Sorting (Newest First)
     let mut sorted_entries: Vec<BinaryInfo> = consolidated.into_values().collect();
-    sorted_entries.sort_unstable_by(|a, b| {
+    sorted_entries.sort_by(|a, b| {
         b.sequence
             .cmp(&a.sequence)
             .then_with(|| b.open_date.cmp(&a.open_date))
+            .then_with(|| a.index.cmp(&b.index))
+            .then_with(|| a.sw_version.cmp(&b.sw_version))
     });
 
     let (stable_entries, beta_entries): (Vec<BinaryInfo>, Vec<BinaryInfo>) =
         sorted_entries.into_iter().partition(|e| e.index != "90");
 
+    let mut seen_stable = BTreeSet::new();
     let mut previous: Vec<String> = stable_entries
         .into_iter()
         .map(|e| normalize_version(&e.sw_version))
+        .filter(|version| seen_stable.insert(version.clone()))
         .collect();
-    previous.dedup();
 
-    let mut beta: Vec<String> = beta_entries
+    let mut seen_beta = BTreeSet::new();
+    let beta: Vec<String> = beta_entries
         .into_iter()
         .map(|e| normalize_version(&e.sw_version))
+        .filter(|version| seen_beta.insert(version.clone()))
         .collect();
-    beta.dedup();
 
     if previous.is_empty() {
         return None;
@@ -381,5 +424,104 @@ mod tests {
             info.beta[0],
             "S931U1UES9BZBH/S931U1OYM9BZBH/S931U1UES9BZBH/S931U1UES9BZBHZ"
         );
+    }
+
+    #[test]
+    fn binary_init_request_is_safe_for_short_and_non_ascii_filenames() {
+        for filename in ["x", "固件.zip.enc4", "éééééééééééééééééééééééé.enc4"]
+        {
+            let request = binary_init_req_xml(filename, "nonce", "A/B/C/D", "MODEL", "XAA");
+            assert!(request.contains(filename));
+            assert!(request.contains("<LOGIC_CHECK><Data>"));
+        }
+    }
+
+    #[test]
+    fn request_builders_escape_all_interpolated_xml_text() {
+        const SPECIAL: &str = "<&>\"'";
+        let model = format!("SM-{SPECIAL}");
+        let region = format!("X{SPECIAL}");
+        let firmware = format!("A{SPECIAL}/B/C/D");
+        let filename = format!("firmware-{SPECIAL}-0123456789abcdef.zip.enc4");
+
+        let inform = binary_inform_req_xml(&model, &region, &firmware, "0123456789abcdef");
+        assert_eq!(request_data(&inform, "BINARY_MODEL_NAME"), model);
+        assert_eq!(request_data(&inform, "BINARY_LOCAL_CODE"), region);
+        assert_eq!(request_data(&inform, "BINARY_SW_VERSION"), firmware);
+
+        let init = binary_init_req_xml(&filename, "0123456789abcdef", &firmware, &model, &region);
+        assert_eq!(request_data(&init, "BINARY_NAME"), filename);
+        assert_eq!(request_data(&init, "BINARY_SW_VERSION"), firmware);
+        assert_eq!(request_data(&init, "DEVICE_LOCAL_CODE"), region);
+        assert_eq!(request_data(&init, "DEVICE_MODEL_TYPE"), model);
+
+        let history = history_req_xml(&model, &region);
+        assert_eq!(request_data(&history, "BINARY_MODEL_NAME"), model);
+        assert_eq!(request_data(&history, "BINARY_LOCAL_CODE"), region);
+
+        for request in [&inform, &init, &history] {
+            assert!(request.contains("&lt;"));
+            assert!(request.contains("&amp;"));
+            assert!(request.contains("&gt;"));
+            assert!(request.contains("&quot;"));
+            assert!(request.contains("&apos;"));
+            Document::parse(request).unwrap();
+        }
+    }
+
+    fn request_data(request: &str, element: &str) -> String {
+        let document = Document::parse(request).unwrap();
+        document
+            .descendants()
+            .find(|node| node.has_tag_name(element))
+            .and_then(|node| node.children().find(|child| child.has_tag_name("Data")))
+            .and_then(|node| node.text())
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn history_deduplication_is_global_and_deterministic() {
+        let xml = r#"
+            <FUSMsg><FUSBody>
+              <BINARY_INFO>
+                <BINARY_SW_VERSION><Data>NEW/CSC/MODEM</Data></BINARY_SW_VERSION>
+                <BINARY_INDEX><Data>00</Data></BINARY_INDEX>
+                <BINARY_SEQUENCE><Data>30</Data></BINARY_SEQUENCE>
+                <BINARY_OPEN_DATE><Data>20260303</Data></BINARY_OPEN_DATE>
+              </BINARY_INFO>
+              <BINARY_INFO>
+                <BINARY_SW_VERSION><Data>OLD/CSC/MODEM</Data></BINARY_SW_VERSION>
+                <BINARY_INDEX><Data>00</Data></BINARY_INDEX>
+                <BINARY_SEQUENCE><Data>20</Data></BINARY_SEQUENCE>
+                <BINARY_OPEN_DATE><Data>20260202</Data></BINARY_OPEN_DATE>
+              </BINARY_INFO>
+              <BINARY_INFO>
+                <BINARY_SW_VERSION><Data>NEW/CSC/MODEM</Data></BINARY_SW_VERSION>
+                <BINARY_INDEX><Data>01</Data></BINARY_INDEX>
+                <BINARY_SEQUENCE><Data>10</Data></BINARY_SEQUENCE>
+                <BINARY_OPEN_DATE><Data>20260101</Data></BINARY_OPEN_DATE>
+              </BINARY_INFO>
+              <BINARY_INFO>
+                <BINARY_SW_VERSION><Data>BETA/CSC/MODEM</Data></BINARY_SW_VERSION>
+                <BINARY_INDEX><Data>90</Data></BINARY_INDEX>
+                <BINARY_SEQUENCE><Data>9</Data></BINARY_SEQUENCE>
+                <BINARY_OPEN_DATE><Data>20260102</Data></BINARY_OPEN_DATE>
+              </BINARY_INFO>
+              <BINARY_INFO>
+                <BINARY_SW_VERSION><Data>BETA/CSC/MODEM</Data></BINARY_SW_VERSION>
+                <BINARY_INDEX><Data>90</Data></BINARY_INDEX>
+                <BINARY_SEQUENCE><Data>8</Data></BINARY_SEQUENCE>
+                <BINARY_OPEN_DATE><Data>20260101</Data></BINARY_OPEN_DATE>
+              </BINARY_INFO>
+            </FUSBody></FUSMsg>
+        "#;
+
+        for _ in 0..20 {
+            let info = parse_history_xml(xml).unwrap();
+            assert_eq!(info.latest, "NEW/CSC/MODEM/NEW");
+            assert_eq!(info.previous, ["OLD/CSC/MODEM/OLD"]);
+            assert_eq!(info.beta, ["BETA/CSC/MODEM/BETA"]);
+        }
     }
 }

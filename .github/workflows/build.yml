@@ -3,6 +3,9 @@ name: samloader build
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   linux:
     name: Build for Linux (${{ matrix.arch }})
@@ -17,36 +20,38 @@ jobs:
 
     steps:
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Build samloader
         run: |
           # Install packages
           sudo apt-get update
           sudo apt-get -y install musl-tools
-          rustup update
           rustup target add ${{ matrix.arch }}-unknown-linux-musl
 
           # Get linux headers since musl does not include them
           git clone https://github.com/sabotage-linux/kernel-headers.git
+          git -C kernel-headers checkout eda76135ba1d81d84780af71dcb1b302eb641d39
           cd kernel-headers
           make ARCH=${{ matrix.arch }} prefix=../linux-usr install
           cd ../
           export CFLAGS_${{ matrix.arch }}_unknown_linux_musl="-I $(readlink -f linux-usr/include)"
 
           # Build samloader
-          cargo build -p samloader --target ${{ matrix.arch }}-unknown-linux-musl --release
-          VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "samloader") | .version')
+          cargo build --locked -p samloader --target ${{ matrix.arch }}-unknown-linux-musl --release
+          VERSION=$(cargo metadata --locked --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "samloader") | .version')
           zip -j samloader-v$VERSION-linux-${{ matrix.arch }}.zip \
             target/${{ matrix.arch }}-unknown-linux-musl/release/samloader
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
+          name: samloader-linux-${{ matrix.arch }}
           path: samloader-*.zip
-          archive: false
+          if-no-files-found: error
 
   windows:
     name: Build for Windows (${{ matrix.arch }})
@@ -63,24 +68,25 @@ jobs:
         shell: bash
     steps:
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Build samloader
         run: |
-          rustup update
-          cargo build -p samloader --release
-          VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "samloader") | .version')
+          cargo build --locked -p samloader --release
+          VERSION=$(cargo metadata --locked --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "samloader") | .version')
           cd target/release
           7z a ../../samloader-v$VERSION-windows-${{ matrix.arch }}.zip \
             samloader.exe
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
+          name: samloader-windows-${{ matrix.arch }}
           path: samloader-*.zip
-          archive: false
+          if-no-files-found: error
 
   macos:
     name: Build for macOS
@@ -88,26 +94,27 @@ jobs:
 
     steps:
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Build samloader
         run: |
-          rustup update
           rustup target add x86_64-apple-darwin
-          cargo build -p samloader --target aarch64-apple-darwin --release
-          cargo build -p samloader --target x86_64-apple-darwin --release
+          cargo build --locked -p samloader --target aarch64-apple-darwin --release
+          cargo build --locked -p samloader --target x86_64-apple-darwin --release
           lipo -create -output target/samloader \
             target/aarch64-apple-darwin/release/samloader \
             target/x86_64-apple-darwin/release/samloader
           codesign -s - target/samloader
-          VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "samloader") | .version')
+          VERSION=$(cargo metadata --locked --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "samloader") | .version')
           zip -j samloader-v$VERSION-macos-universal.zip \
             target/samloader
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
+          name: samloader-macos-universal
           path: samloader-*.zip
-          archive: false
+          if-no-files-found: error

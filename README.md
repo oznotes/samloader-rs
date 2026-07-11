@@ -2,6 +2,12 @@
 
 An all-in-one Samsung firmware download and flash tool.
 
+> [!WARNING]
+> Firmware flashing writes device partitions. Confirm the exact device, model,
+> CSC, and package set before starting. Regular `CSC` packages factory-reset the
+> device; `HOME_CSC` is the data-preserving default. Never disconnect or close
+> the application while a partition is being written.
+
 ```
 Usage: samloader [OPTIONS] <COMMAND>
 
@@ -18,7 +24,7 @@ Commands:
 
 Options:
       --verbose                    Enable verbose output
-      --usb-backend <usb_backend>  The USB backend to use [default: libusb] [possible values: libusb, vcom]
+      --usb-backend <usb_backend>  The USB backend to use [default: vcom] [possible values: nusb, vcom]
   -h, --help                       Print help
   -V, --version                    Print version
 ```
@@ -49,13 +55,40 @@ samloader flash --folder /path/to/firmware-folder --csc-mode wipe
 
 ## Install
 
+### Windows desktop
+
+The desktop interface can list known stable and beta firmware history, detect
+an authorized Android device through ADB, download with pause/resume/cancel and
+preflight checks, inspect PIT data, verify `.tar.md5` packages, and flash from
+packages or an extracted firmware folder.
+
+Use the signed installer for the normal consumer setup. The portable executable
+requires the Microsoft Edge WebView2 runtime, which is normally present on
+current Windows 10 and Windows 11 systems. Device identification requires
+Android Platform Tools (`adb`) in `PATH`; Download Mode operations require an
+appropriate Samsung USB/VCOM or WinUSB driver.
+
+Every public Windows release includes:
+
+- an Authenticode-signed installer and portable executable;
+- an Authenticode-signed command-line executable;
+- `SHA256SUMS.txt` for every executable; and
+- project and third-party license notices.
+
+Do not use a public binary if Windows reports a missing or invalid signature.
+
+### Command line
+
 If you have a working Rust toolchain installed, you can install with:
 
 ```bash
 cargo install samloader
 ```
 
-Prebuilt executables for Linux, macOS, and Windows are also available in the [latest GitHub release](https://github.com/topjohnwu/samloader-rs/releases/latest).
+Prebuilt executables are available from this repository's [latest GitHub release](../../releases/latest).
+
+See [RELEASE.md](RELEASE.md) for the automated and physical-device release
+gates, and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
 ## License & Acknowledgements
 

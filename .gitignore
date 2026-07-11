@@ -2,6 +2,7 @@
 samloader-gui/dist/
 samloader-gui/node_modules/
 samloader-gui/src-tauri/gen/
+samloader-gui/src-tauri/tauri.release.conf.json
 /*.zip
 /*.enc4
 /.idea

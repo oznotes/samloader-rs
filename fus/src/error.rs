@@ -27,11 +27,32 @@ pub enum Error {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
 
+    /// The download server returned an HTTP status that did not satisfy the
+    /// request. `retryable` distinguishes transient server throttling/outages
+    /// from permanent authorization, range, and client errors.
+    #[error("Firmware server returned HTTP {status}: {message}")]
+    HttpStatus {
+        /// Numeric HTTP status code returned by the server.
+        status: u16,
+        /// Whether retrying this response can reasonably succeed.
+        retryable: bool,
+        /// Human-readable status and request context.
+        message: String,
+    },
+
     /// The FUS server returned a successful HTTP response that did not contain
     /// the expected firmware metadata.
     #[error("Invalid FUS response: {message}")]
     InvalidResponse {
         /// A description of the missing or malformed response data.
+        message: String,
+    },
+
+    /// The decrypted firmware archive failed structural or checksum
+    /// verification and must not be installed or flashed.
+    #[error("Firmware integrity verification failed: {message}")]
+    Integrity {
+        /// Description of the malformed archive or failed checksum.
         message: String,
     },
 
@@ -47,6 +68,24 @@ pub enum Error {
         requested: u64,
         /// The maximum worker count supported by the downloader.
         max: u64,
+    },
+
+    /// The requested destination already exists. Downloads use exclusive file
+    /// creation so concurrent callers cannot truncate or share a memory map.
+    #[error("Download destination already exists or is in use: {path}")]
+    DestinationExists {
+        /// Destination path that could not be exclusively created.
+        path: String,
+    },
+
+    /// All retry attempts failed without advancing the download. The last
+    /// transport or transient server failure is retained as `cause`.
+    #[error("Download failed at offset {offset} after retries: {cause}")]
+    RetryExhausted {
+        /// Absolute ciphertext offset where progress stopped.
+        offset: u64,
+        /// Last observed transport or transient HTTP failure.
+        cause: String,
     },
 
     /// The download stalled completely because the server stopped responding.

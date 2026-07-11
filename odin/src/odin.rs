@@ -30,6 +30,7 @@ pub struct OdinManager {
     file_transfer_sequence_timeout: u32,
     lz4_supported: bool,
     bootloader_protocol_version: u32,
+    session_active: bool,
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
@@ -56,6 +57,7 @@ impl OdinManager {
             file_transfer_sequence_timeout: FILE_TRANSFER_SEQUENCE_TIMEOUT_DEFAULT,
             lz4_supported: false,
             bootloader_protocol_version: 0,
+            session_active: false,
         }
     }
 
@@ -87,6 +89,10 @@ impl OdinManager {
     pub fn begin_session(&mut self) -> Result<(), OdinError> {
         println!("Beginning session...");
 
+        // Once this request is sent the device may have entered a session even
+        // when a later negotiation step fails. Track that possibility so Drop
+        // can always make a best-effort attempt to close it.
+        self.session_active = true;
         let packet = RequestPacket::begin_session();
         let session_response = self
             .request_and_response(&packet, EmptySendKind::After, 3000)
@@ -125,6 +131,9 @@ impl OdinManager {
     pub fn end_session(&mut self) -> Result<(), OdinError> {
         println!("Ending session...");
 
+        // Clear this before I/O so a failed end packet is not sent repeatedly
+        // from Drop. The packet below is the single best-effort cleanup attempt.
+        self.session_active = false;
         let packet = RequestPacket::end_session();
         self.request_and_response(&packet, EmptySendKind::After, 3000)
             .map_err(|_| OdinError::EndSessionSendFailed)?;
@@ -445,6 +454,9 @@ impl OdinManager {
     where
         F: FnMut(u64),
     {
+        info.validate()
+            .map_err(|error| OdinError::ParseError(format!("LZ4 preflight failed: {error}")))?;
+
         if !self.lz4_supported || info.header.block_max_size != 1024 * 1024 {
             let sequences = info.decompressed_sequences(self.file_transfer_sequence_max_bytes());
             return self.send_raw_sequences_with_progress(sequences, info.pit_entry, progress);
@@ -594,6 +606,14 @@ impl OdinManager {
     }
 }
 
+impl Drop for OdinManager {
+    fn drop(&mut self) {
+        if self.session_active {
+            let _ = self.end_session();
+        }
+    }
+}
+
 /// Triggers a reboot of the connected Samsung device into Download Mode via the
 /// specified backend protocol.
 pub fn reboot_download(usb_backend: crate::usb::UsbBackendOption) -> Result<(), OdinError> {
@@ -618,7 +638,7 @@ pub fn reboot_download(usb_backend: crate::usb::UsbBackendOption) -> Result<(), 
             let device = RusbBackend::find_device(false, |vid, _| vid == VID_SAMSUNG)?;
             Ok::<Box<dyn UsbTransfer>, OdinError>(Box::new(RusbBackend::new(device, false)?))
         }
-        #[cfg(any(feature = "mock", debug_assertions))]
+        #[cfg(any(feature = "mock", debug_assertions, test))]
         crate::usb::UsbBackendOption::Mock => {
             use crate::usb::MockBackend;
             Ok::<Box<dyn UsbTransfer>, OdinError>(Box::new(MockBackend::new(false)))
@@ -637,7 +657,66 @@ pub fn reboot_download(usb_backend: crate::usb::UsbBackendOption) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::usb::MockBackend;
+    use crate::firmware::{FirmwareLz4File, Lz4FrameHeader};
+    use crate::usb::{MockBackend, UsbTransfer};
+    use lz4_flex::frame::{BlockSize, FrameEncoder, FrameInfo};
+    use memmap2::MmapOptions;
+    use samloader_pit::PitData;
+    use std::fs::{OpenOptions, remove_file};
+    use std::io::Write;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct CountingBackend {
+        send_count: Arc<AtomicUsize>,
+    }
+
+    impl UsbTransfer for CountingBackend {
+        fn reset(&mut self) {}
+
+        fn send_data(&mut self, _data: &[u8], _timeout: i32, _retry: bool) -> bool {
+            self.send_count.fetch_add(1, Ordering::Relaxed);
+            false
+        }
+
+        fn receive_data(&mut self, _data: &mut [u8], _timeout: i32, _retry: bool) -> i32 {
+            0
+        }
+    }
+
+    fn truncated_lz4_frame() -> Vec<u8> {
+        let payload = vec![0x5a; 4096];
+        let frame_info = FrameInfo::new()
+            .block_size(BlockSize::Max1MB)
+            .content_size(Some(payload.len() as u64));
+        let mut encoder = FrameEncoder::with_frame_info(frame_info, Vec::new());
+        encoder.write_all(&payload).unwrap();
+        let mut frame = encoder.finish().unwrap();
+        frame.pop();
+        frame
+    }
+
+    fn map_test_frame(frame: &[u8], label: &str) -> (std::path::PathBuf, memmap2::Mmap) {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "samloader-odin-lz4-{label}-{}-{nonce}.bin",
+            std::process::id()
+        ));
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(frame).unwrap();
+        file.flush().unwrap();
+        let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
+        (path, mmap)
+    }
 
     #[test]
     fn test_odin_mock_session_and_pit_download() {
@@ -649,6 +728,7 @@ mod tests {
 
         // session begin
         assert!(manager.begin_session().is_ok());
+        assert!(manager.session_active);
         assert_eq!(manager.bootloader_protocol_version(), 2);
         assert!(manager.is_lz4_supported());
 
@@ -659,5 +739,49 @@ mod tests {
 
         // end session
         assert!(manager.end_session().is_ok());
+        assert!(!manager.session_active);
+    }
+
+    #[test]
+    fn malformed_lz4_is_rejected_before_writes_in_both_transfer_modes() {
+        let frame = truncated_lz4_frame();
+        let header = Lz4FrameHeader::parse(&frame[..]).unwrap();
+        let pit = PitData::new(include_bytes!("../../test-data/Q7MQ_EUR_OPENX.pit")).unwrap();
+
+        for lz4_supported in [false, true] {
+            let (path, mmap) = map_test_frame(
+                &frame,
+                if lz4_supported {
+                    "compressed"
+                } else {
+                    "fallback"
+                },
+            );
+            let send_count = Arc::new(AtomicUsize::new(0));
+            let backend = Box::new(CountingBackend {
+                send_count: Arc::clone(&send_count),
+            });
+            let mut manager = OdinManager::new(backend, false);
+            manager.lz4_supported = lz4_supported;
+            let firmware = FirmwareLz4File {
+                pit_entry: &pit.entries[0],
+                file: mmap,
+                header: Lz4FrameHeader {
+                    content_size: header.content_size,
+                    block_max_size: header.block_max_size,
+                },
+            };
+
+            let error = manager.send_lz4_file(&firmware).unwrap_err();
+            assert!(matches!(error, OdinError::ParseError(_)));
+            assert_eq!(
+                send_count.load(Ordering::Relaxed),
+                0,
+                "invalid LZ4 data must be rejected before transport writes"
+            );
+
+            drop(firmware);
+            remove_file(path).unwrap();
+        }
     }
 }

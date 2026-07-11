@@ -20,7 +20,8 @@ const AUTH_AES_KEY: [u8; 16] = [
 ];
 
 fn authenticate_block(in_block: &[u8; 16]) -> [u8; 16] {
-    let cipher = aes::Aes128::new_from_slice(&AUTH_AES_KEY).unwrap();
+    let key: aes::cipher::Key<aes::Aes128> = AUTH_AES_KEY.into();
+    let cipher = aes::Aes128::new(&key);
     let mut block = Block::<aes::Aes128>::default();
     block.copy_from_slice(in_block);
     cipher.encrypt_block(&mut block);

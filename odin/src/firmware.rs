@@ -104,6 +104,7 @@ pub fn verify_md5_footer<R: Read + Seek>(mut reader: R) -> io::Result<()> {
 }
 
 /// Header containing metadata parsed from an LZ4 frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Lz4FrameHeader {
     /// Total size of the decompressed content in bytes.
     pub content_size: u64,
@@ -193,6 +194,114 @@ impl Lz4FrameHeader {
     }
 }
 
+/// Fully validates one Samsung-compatible LZ4 frame and returns its parsed header.
+///
+/// Validation decodes the complete payload, verifies the declared decompressed
+/// content size and any enabled checksums, requires an explicit frame end marker,
+/// and rejects trailing bytes. This is intended as a preflight check before any
+/// firmware bytes are sent to a device.
+pub fn validate_lz4_frame(frame: &[u8]) -> Result<Lz4FrameHeader, String> {
+    let header = Lz4FrameHeader::parse(frame)
+        .map_err(|error| format!("Invalid LZ4 frame header: {error}"))?;
+    if header.content_size == 0 {
+        return Err("LZ4 firmware frame declares an empty decompressed payload".to_string());
+    }
+
+    validate_lz4_frame_structure(frame, &header)?;
+
+    let mut decoder = FrameDecoder::new(frame);
+    let mut buffer = [0_u8; 128 * 1024];
+    let mut decompressed_size = 0_u64;
+    loop {
+        let bytes_read = decoder
+            .read(&mut buffer)
+            .map_err(|error| format!("LZ4 decompression failed: {error}"))?;
+        if bytes_read == 0 {
+            break;
+        }
+        decompressed_size = decompressed_size
+            .checked_add(bytes_read as u64)
+            .ok_or_else(|| "LZ4 decompressed size overflowed u64".to_string())?;
+    }
+
+    if decompressed_size != header.content_size {
+        return Err(format!(
+            "LZ4 decompressed content size mismatch: header declares {} bytes but the frame produced {} bytes",
+            header.content_size, decompressed_size
+        ));
+    }
+
+    Ok(header)
+}
+
+fn validate_lz4_frame_structure(frame: &[u8], header: &Lz4FrameHeader) -> Result<(), String> {
+    if frame.len() < LZ4_HEADER_SIZE {
+        return Err("LZ4 frame is truncated before the complete header".to_string());
+    }
+
+    let block_checksums = frame[4] & 0x10 != 0;
+    let content_checksum = frame[4] & 0x04 != 0;
+    let block_max_size = usize::try_from(header.block_max_size)
+        .map_err(|_| "LZ4 block maximum size does not fit this platform".to_string())?;
+    let mut offset = LZ4_HEADER_SIZE;
+
+    loop {
+        let block_header_end = offset
+            .checked_add(4)
+            .ok_or_else(|| "LZ4 block header offset overflowed".to_string())?;
+        let block_header = frame.get(offset..block_header_end).ok_or_else(|| {
+            "LZ4 frame is truncated before a complete block header or end marker".to_string()
+        })?;
+        let block_size = u32::from_le_bytes(block_header.try_into().unwrap());
+        offset = block_header_end;
+
+        if block_size == 0 {
+            if content_checksum {
+                offset = offset
+                    .checked_add(4)
+                    .ok_or_else(|| "LZ4 content checksum offset overflowed".to_string())?;
+                if offset > frame.len() {
+                    return Err("LZ4 frame is truncated in its content checksum".to_string());
+                }
+            }
+
+            if offset != frame.len() {
+                return Err(format!(
+                    "LZ4 frame contains {} trailing byte(s) after its end marker",
+                    frame.len() - offset
+                ));
+            }
+            return Ok(());
+        }
+
+        let data_size = (block_size & 0x7fff_ffff) as usize;
+        if data_size == 0 {
+            return Err("LZ4 frame contains an invalid zero-length data block".to_string());
+        }
+        if data_size > block_max_size {
+            return Err(format!(
+                "LZ4 data block is {data_size} bytes, exceeding the declared {block_max_size}-byte maximum"
+            ));
+        }
+
+        offset = offset
+            .checked_add(data_size)
+            .ok_or_else(|| "LZ4 data block offset overflowed".to_string())?;
+        if offset > frame.len() {
+            return Err("LZ4 frame is truncated in a data block".to_string());
+        }
+
+        if block_checksums {
+            offset = offset
+                .checked_add(4)
+                .ok_or_else(|| "LZ4 block checksum offset overflowed".to_string())?;
+            if offset > frame.len() {
+                return Err("LZ4 frame is truncated in a block checksum".to_string());
+            }
+        }
+    }
+}
+
 /// An uncompressed firmware file mapped in memory.
 pub struct FirmwareFile<'a> {
     /// PIT partition entry associated with this file.
@@ -218,6 +327,18 @@ pub struct FirmwareLz4File<'a> {
 }
 
 impl<'a> FirmwareLz4File<'a> {
+    /// Validates the complete LZ4 payload and confirms that its header matches
+    /// the metadata stored with this firmware file.
+    pub fn validate(&self) -> Result<(), String> {
+        let validated_header = validate_lz4_frame(&self.file)?;
+        if validated_header.content_size != self.header.content_size
+            || validated_header.block_max_size != self.header.block_max_size
+        {
+            return Err("LZ4 firmware metadata does not match the mapped frame header".to_string());
+        }
+        Ok(())
+    }
+
     pub(crate) fn sequences(&self, sequence_max_bytes: usize) -> Lz4SequenceIterator<'_> {
         Lz4SequenceIterator {
             file: &self.file,
@@ -245,6 +366,26 @@ pub enum FirmwareInfo<'a> {
     Normal(FirmwareFile<'a>),
     /// LZ4-compressed firmware file payload.
     Lz4(FirmwareLz4File<'a>),
+}
+
+/// Validates every compressed payload in a complete firmware plan.
+///
+/// Call this after PIT mapping and before uploading a replacement PIT or any
+/// partition payload so a malformed later entry cannot fail after an earlier
+/// partition has already been written.
+pub fn validate_firmware_plan(plan: &[FirmwareInfo<'_>]) -> Result<(), String> {
+    for (index, info) in plan.iter().enumerate() {
+        if let FirmwareInfo::Lz4(info) = info {
+            info.validate().map_err(|error| {
+                format!(
+                    "LZ4 preflight failed for partition {} at plan entry {}: {error}",
+                    info.pit_entry.partition_name,
+                    index + 1
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) struct Lz4SequenceIterator<'a> {
@@ -336,5 +477,74 @@ impl<'a> Iterator for Lz4DecompressedSequenceIterator<'a> {
 
         buffer.truncate(total_read);
         Some(buffer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_lz4_frame;
+    use lz4_flex::frame::{BlockSize, FrameEncoder, FrameInfo};
+    use std::io::Write;
+
+    fn encode_frame(payload: &[u8], content_checksum: bool) -> Vec<u8> {
+        let frame_info = FrameInfo::new()
+            .block_size(BlockSize::Max1MB)
+            .content_size(Some(payload.len() as u64))
+            .content_checksum(content_checksum);
+        let mut encoder = FrameEncoder::with_frame_info(frame_info, Vec::new());
+        encoder.write_all(payload).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn full_lz4_preflight_accepts_one_complete_frame() {
+        let payload = vec![0x5a; 2 * 1024 * 1024 + 17];
+        let frame = encode_frame(&payload, true);
+
+        let header = validate_lz4_frame(&frame).unwrap();
+
+        assert_eq!(header.content_size, payload.len() as u64);
+        assert_eq!(header.block_max_size, 1024 * 1024);
+    }
+
+    #[test]
+    fn full_lz4_preflight_rejects_truncation_and_trailing_data() {
+        let mut truncated = encode_frame(&vec![0x33; 4096], false);
+        truncated.pop();
+        assert!(validate_lz4_frame(&truncated).is_err());
+
+        let mut trailing = encode_frame(&vec![0x44; 4096], false);
+        trailing.extend_from_slice(b"unexpected");
+        let error = validate_lz4_frame(&trailing).unwrap_err();
+        assert!(error.contains("trailing byte"), "{error}");
+    }
+
+    #[test]
+    fn full_lz4_preflight_requires_exact_declared_content_size() {
+        let mut frame = encode_frame(b"abc", false);
+        let block_size = u32::from_le_bytes(frame[15..19].try_into().unwrap());
+        assert_eq!(block_size, 0x8000_0003);
+
+        // Keep a structurally complete frame but shorten its uncompressed block.
+        // The original header still declares three decompressed bytes.
+        frame[15..19].copy_from_slice(&0x8000_0002_u32.to_le_bytes());
+        frame.remove(21);
+
+        let error = validate_lz4_frame(&frame).unwrap_err();
+        assert!(
+            error.contains("ContentLengthError") || error.contains("content size mismatch"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn full_lz4_preflight_verifies_enabled_content_checksum() {
+        let mut frame = encode_frame(b"abc", true);
+        let block_size = u32::from_le_bytes(frame[15..19].try_into().unwrap());
+        assert_eq!(block_size, 0x8000_0003);
+        frame[19] ^= 0xff;
+
+        let error = validate_lz4_frame(&frame).unwrap_err();
+        assert!(error.contains("ContentChecksumError"), "{error}");
     }
 }

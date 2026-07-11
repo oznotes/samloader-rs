@@ -20,10 +20,12 @@ compile_error!("At least one USB backend must be enabled!");
 mod actions;
 mod download;
 mod flash;
+mod fsutil;
 
 use clap::{Arg, ArgAction, Command};
-use samloader_fus::{FusClient, fetch_version_xml};
+use samloader_fus::{FusClient, try_fetch_version_xml};
 use samloader_odin::UsbBackendOption;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -121,13 +123,14 @@ Example explicit flashing: samloader flash -p RECOVERY recovery.img
 Example auto-matching: samloader flash -f boot.img"#;
 
 const NO_REBOOT_HELP: &str = "Disables automatic reboot after flashing";
-const REPARTITION_HELP: &str = "Repartition the device. WARNING: It's strongly recommended \
-                                you specify all files at your disposal";
+const REPARTITION_HELP: &str = "Repartition the device. Requires BL/AP/CP, factory-reset CSC, \
+                                and one hardware-compatible PIT";
 const SKIP_SIZE_CHECK_HELP: &str = "Do not verify that files fit in the specified partition";
-const PIT_HELP: &str = "The PIT file to use for repartitioning or flashing";
+const PIT_HELP: &str = "The PIT file to use with --repartition";
 const SKIP_MD5_HELP: &str = "Skip MD5 checksum verification";
 const FOLDER_HELP: &str = "Folder containing BL/AP/CP/CSC/USERDATA tar package files";
-const CSC_MODE_HELP: &str = "CSC package to auto-select from --folder";
+const CSC_MODE_HELP: &str =
+    "CSC safety mode: home requires HOME_CSC; wipe selects/requires regular CSC and factory-resets";
 const BL_HELP: &str = "BL tar package file";
 const AP_HELP: &str = "AP tar package file";
 const CP_HELP: &str = "CP tar package file";
@@ -184,8 +187,8 @@ impl OdinOptionExt for Command {
     }
 }
 
-#[derive(Debug)]
-struct FolderPackages {
+#[derive(Debug, Clone, Default)]
+pub(crate) struct FolderPackages {
     bl: Option<String>,
     ap: Option<String>,
     cp: Option<String>,
@@ -194,23 +197,202 @@ struct FolderPackages {
 }
 
 impl FolderPackages {
-    fn append_to(self, packages: &mut Vec<String>) {
-        if let Some(bl) = self.bl {
-            packages.push(bl);
+    fn append_to(&self, packages: &mut Vec<String>) {
+        if let Some(bl) = &self.bl {
+            packages.push(bl.clone());
         }
-        if let Some(ap) = self.ap {
-            packages.push(ap);
+        if let Some(ap) = &self.ap {
+            packages.push(ap.clone());
         }
-        if let Some(cp) = self.cp {
-            packages.push(cp);
+        if let Some(cp) = &self.cp {
+            packages.push(cp.clone());
         }
-        if let Some(csc) = self.csc {
-            packages.push(csc);
+        if let Some(csc) = &self.csc {
+            packages.push(csc.clone());
         }
-        if let Some(userdata) = self.userdata {
-            packages.push(userdata);
+        if let Some(userdata) = &self.userdata {
+            packages.push(userdata.clone());
         }
     }
+
+    fn is_empty(&self) -> bool {
+        self.bl.is_none()
+            && self.ap.is_none()
+            && self.cp.is_none()
+            && self.csc.is_none()
+            && self.userdata.is_none()
+    }
+
+    fn has_core_set(&self) -> bool {
+        self.bl.is_some() && self.ap.is_some() && self.cp.is_some() && self.csc.is_some()
+    }
+}
+
+fn package_basename(path: &str) -> Result<String, String> {
+    Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| format!("Firmware package path \"{path}\" has no filename."))
+}
+
+fn validate_package_slot(path: &str, slot: &str, prefixes: &[&str]) -> Result<(), String> {
+    let filename = package_basename(path)?;
+    if !is_tar_package_name(&filename) {
+        return Err(format!(
+            "The {slot} slot contains \"{filename}\", which is not a .tar or .tar.md5 package."
+        ));
+    }
+    let upper = filename.to_ascii_uppercase();
+    if !prefixes.iter().any(|prefix| upper.starts_with(prefix)) {
+        return Err(format!(
+            "The {slot} slot contains \"{filename}\", which is not a {slot} package."
+        ));
+    }
+    Ok(())
+}
+
+fn package_build_token(path: &str, prefix: &str) -> Option<String> {
+    let filename = package_basename(path).ok()?.to_ascii_uppercase();
+    filename
+        .strip_prefix(prefix)?
+        .split('_')
+        .next()
+        .filter(|token| !token.is_empty())
+        .map(str::to_string)
+}
+
+fn package_model_identity(path: &str) -> Option<String> {
+    let filename = package_basename(path).ok()?.to_ascii_uppercase();
+    filename.split('_').find_map(|token| {
+        let bytes = token.as_bytes();
+        if bytes.len() < 5
+            || !bytes[0].is_ascii_alphabetic()
+            || !bytes[1..4].iter().all(u8::is_ascii_digit)
+            || !bytes[4].is_ascii_alphabetic()
+        {
+            return None;
+        }
+        let length = if bytes.get(5).is_some_and(u8::is_ascii_digit) {
+            6
+        } else {
+            5
+        };
+        Some(token[..length].to_string())
+    })
+}
+
+pub(crate) fn validate_package_selection(
+    packages: &FolderPackages,
+    csc_mode: &str,
+    repartition: bool,
+) -> Result<(), String> {
+    if !matches!(csc_mode, "home" | "wipe") {
+        return Err(format!("Unknown CSC mode: {csc_mode}"));
+    }
+
+    if let Some(path) = &packages.bl {
+        validate_package_slot(path, "BL", &["BL_"])?;
+    }
+    if let Some(path) = &packages.ap {
+        validate_package_slot(path, "AP", &["AP_"])?;
+    }
+    if let Some(path) = &packages.cp {
+        validate_package_slot(path, "CP", &["CP_"])?;
+    }
+    if let Some(path) = &packages.userdata {
+        validate_package_slot(path, "USERDATA", &["USERDATA_"])?;
+    }
+    if let Some(path) = &packages.csc {
+        match csc_mode {
+            "home" => validate_package_slot(path, "HOME_CSC", &["HOME_CSC_"])?,
+            "wipe" => {
+                let filename = package_basename(path)?;
+                let upper = filename.to_ascii_uppercase();
+                if !upper.starts_with("CSC_") || upper.starts_with("HOME_CSC_") {
+                    return Err(format!(
+                        "The CSC slot contains \"{filename}\", which is not a factory-reset CSC package."
+                    ));
+                }
+            }
+            _ => unreachable!("csc-mode was validated above"),
+        }
+    }
+
+    let mut selected_paths = HashSet::new();
+    for path in [
+        packages.bl.as_deref(),
+        packages.ap.as_deref(),
+        packages.cp.as_deref(),
+        packages.csc.as_deref(),
+        packages.userdata.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let normalized = path.trim().replace('/', "\\").to_ascii_lowercase();
+        if !selected_paths.insert(normalized) {
+            return Err(format!(
+                "Firmware package \"{path}\" was selected in more than one slot."
+            ));
+        }
+    }
+
+    if let (Some(bl), Some(ap)) = (&packages.bl, &packages.ap) {
+        let bl_build = package_build_token(bl, "BL_");
+        let ap_build = package_build_token(ap, "AP_");
+        if let (Some(bl_build), Some(ap_build)) = (bl_build, ap_build)
+            && bl_build != ap_build
+        {
+            return Err(format!(
+                "BL and AP packages belong to different firmware builds ({bl_build} vs {ap_build}). Select packages from one firmware release."
+            ));
+        }
+    }
+
+    let mut package_models: HashMap<String, String> = HashMap::new();
+    for (slot, path) in [
+        ("BL", packages.bl.as_deref()),
+        ("AP", packages.ap.as_deref()),
+        ("CP", packages.cp.as_deref()),
+        ("CSC", packages.csc.as_deref()),
+        ("USERDATA", packages.userdata.as_deref()),
+    ] {
+        if let Some(path) = path
+            && let Some(model) = package_model_identity(path)
+        {
+            package_models.insert(slot.to_string(), model);
+        }
+    }
+    if let Some(expected_model) = package_models.values().next() {
+        let mismatched: Vec<String> = package_models
+            .iter()
+            .filter(|(_, model)| *model != expected_model)
+            .map(|(slot, model)| format!("{slot}={model}"))
+            .collect();
+        if !mismatched.is_empty() {
+            return Err(format!(
+                "Selected packages target different device families (expected {expected_model}; {}). Select every package from one model and release.",
+                mismatched.join(", ")
+            ));
+        }
+    }
+
+    if repartition {
+        if csc_mode != "wipe" {
+            return Err(
+                "Repartition requires factory-reset CSC mode; HOME_CSC cannot be used.".to_string(),
+            );
+        }
+        if !packages.has_core_set() {
+            return Err(
+                "Repartition requires a complete BL, AP, CP, and factory-reset CSC package set."
+                    .to_string(),
+            );
+        }
+    }
+
+    Ok(())
 }
 
 fn is_tar_package_name(name: &str) -> bool {
@@ -340,78 +522,21 @@ fn scan_package_folder(folder: &str, csc_mode: &str) -> Result<FolderPackages, S
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs::File;
-    use std::io::Write;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn temp_firmware_dir(test_name: &str) -> PathBuf {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "samloader-rs-{test_name}-{}-{nonce}",
-            std::process::id()
-        ));
-        fs::create_dir(&dir).unwrap();
-        dir
-    }
-
-    fn write_package(dir: &Path, name: &str) {
-        let mut file = File::create(dir.join(name)).unwrap();
-        file.write_all(b"test").unwrap();
-    }
-
-    #[test]
-    fn folder_mode_defaults_to_home_csc() {
-        let dir = temp_firmware_dir("home-csc");
-        write_package(&dir, "AP_test.tar.md5");
-        write_package(&dir, "CSC_test.tar.md5");
-        write_package(&dir, "HOME_CSC_test.tar.md5");
-
-        let selection = scan_package_folder(dir.to_str().unwrap(), "home").unwrap();
-
-        assert!(selection.ap.unwrap().ends_with("AP_test.tar.md5"));
-        assert!(selection.csc.unwrap().ends_with("HOME_CSC_test.tar.md5"));
-        fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn folder_mode_wipe_selects_regular_csc() {
-        let dir = temp_firmware_dir("wipe-csc");
-        write_package(&dir, "CSC_test.tar.md5");
-        write_package(&dir, "HOME_CSC_test.tar.md5");
-
-        let selection = scan_package_folder(dir.to_str().unwrap(), "wipe").unwrap();
-
-        assert!(selection.csc.unwrap().ends_with("CSC_test.tar.md5"));
-        fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn folder_mode_home_rejects_regular_csc_fallback() {
-        let dir = temp_firmware_dir("home-rejects-csc");
-        write_package(&dir, "CSC_test.tar.md5");
-
-        let err = scan_package_folder(dir.to_str().unwrap(), "home").unwrap_err();
-
-        assert!(err.contains("--csc-mode wipe"));
-        fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn folder_mode_prefers_md5_package_over_tar_package() {
-        let dir = temp_firmware_dir("prefer-md5");
-        write_package(&dir, "BL_test.tar");
-        write_package(&dir, "BL_test.tar.md5");
-
-        let selection = scan_package_folder(dir.to_str().unwrap(), "home").unwrap();
-
-        assert!(selection.bl.unwrap().ends_with("BL_test.tar.md5"));
-        fs::remove_dir_all(dir).unwrap();
+fn resolve_package_selection(
+    folder: Option<&str>,
+    csc_mode: &str,
+    explicit: FolderPackages,
+) -> Result<FolderPackages, String> {
+    if let Some(folder) = folder {
+        if !explicit.is_empty() {
+            return Err(
+                "Choose either --folder or explicit BL/AP/CP/CSC/USERDATA package slots, not both."
+                    .to_string(),
+            );
+        }
+        scan_package_folder(folder, csc_mode)
+    } else {
+        Ok(explicit)
     }
 }
 
@@ -459,12 +584,14 @@ fn main() {
                     Arg::new("out_dir")
                         .short('d')
                         .long("out-dir")
+                        .conflicts_with("out_file")
                         .help(OUT_DIR_HELP),
                 )
                 .arg(
                     Arg::new("out_file")
                         .short('o')
                         .long("out-file")
+                        .conflicts_with("out_dir")
                         .help(OUT_FILE_HELP),
                 ),
         )
@@ -540,7 +667,13 @@ fn main() {
                         .action(ArgAction::SetTrue)
                         .help(SKIP_MD5_HELP),
                 )
-                .arg(Arg::new("pit").long("pit").num_args(1).help(PIT_HELP))
+                .arg(
+                    Arg::new("pit")
+                        .long("pit")
+                        .num_args(1)
+                        .requires("repartition")
+                        .help(PIT_HELP),
+                )
                 .arg(
                     Arg::new("folder")
                         .long("folder")
@@ -653,18 +786,31 @@ fn main() {
                 out_file,
                 verbose,
             };
-            download::action_download(args);
-            0
+            download::action_download(args)
         }
         Some(("check-update", sub_m)) => {
             let model = sub_m.get_one::<String>("model").cloned().unwrap();
             let region = sub_m.get_one::<String>("region").cloned().unwrap();
             let show_all = sub_m.get_flag("all");
 
-            let info = FusClient::new()
-                .and_then(|client| client.fetch_history(&model, &region))
-                .or_else(|_| fetch_version_xml(&model, &region))
-                .expect("Failed to fetch version info");
+            let history = match FusClient::new() {
+                Ok(client) => client
+                    .try_fetch_history(&model, &region)
+                    .map_err(|error| error.to_string()),
+                Err(error) => Err(format!("could not connect to FUS history service: {error}")),
+            };
+            let info = match history {
+                Ok(info) => info,
+                Err(history_error) => match try_fetch_version_xml(&model, &region) {
+                    Ok(info) => info,
+                    Err(version_error) => {
+                        print_error!(
+                            "Could not resolve firmware for model {model} and region {region}. History request: {history_error}. Version request: {version_error}"
+                        );
+                        std::process::exit(1);
+                    }
+                },
+            };
 
             if show_all {
                 println!("Latest Stable Version:");
@@ -711,37 +857,28 @@ fn main() {
             sub_matches.get_flag("wait"),
         ),
         Some(("flash", sub_matches)) => {
-            let mut packages = Vec::new();
-            if let Some(folder) = sub_matches.get_one::<String>("folder") {
-                let csc_mode = sub_matches
-                    .get_one::<String>("csc-mode")
-                    .map(|s| s.as_str())
-                    .unwrap_or("home");
-                let folder_packages = match scan_package_folder(folder, csc_mode) {
-                    Ok(packages) => packages,
-                    Err(e) => {
-                        print_error!("{}", e);
-                        std::process::exit(1);
-                    }
-                };
-                folder_packages.append_to(&mut packages);
-            }
-
-            if let Some(bl) = sub_matches.get_one::<String>("bl") {
-                packages.push(bl.clone());
-            }
-            if let Some(ap) = sub_matches.get_one::<String>("ap") {
-                packages.push(ap.clone());
-            }
-            if let Some(cp) = sub_matches.get_one::<String>("cp") {
-                packages.push(cp.clone());
-            }
-            if let Some(csc) = sub_matches.get_one::<String>("csc") {
-                packages.push(csc.clone());
-            }
-            if let Some(userdata) = sub_matches.get_one::<String>("userdata") {
-                packages.push(userdata.clone());
-            }
+            let csc_mode = sub_matches
+                .get_one::<String>("csc-mode")
+                .map(|s| s.as_str())
+                .unwrap_or("home");
+            let explicit_packages = FolderPackages {
+                bl: sub_matches.get_one::<String>("bl").cloned(),
+                ap: sub_matches.get_one::<String>("ap").cloned(),
+                cp: sub_matches.get_one::<String>("cp").cloned(),
+                csc: sub_matches.get_one::<String>("csc").cloned(),
+                userdata: sub_matches.get_one::<String>("userdata").cloned(),
+            };
+            let packages = match resolve_package_selection(
+                sub_matches.get_one::<String>("folder").map(String::as_str),
+                csc_mode,
+                explicit_packages,
+            ) {
+                Ok(packages) => packages,
+                Err(e) => {
+                    print_error!("{}", e);
+                    std::process::exit(1);
+                }
+            };
 
             let mut partitions = Vec::new();
             if let Some(args) = sub_matches.get_many::<String>("partition") {
@@ -780,6 +917,7 @@ fn main() {
                 sub_matches.get_flag("skip-size-check"),
                 sub_matches.get_flag("skip-md5"),
                 sub_matches.get_one::<String>("pit").map(|s| s.as_str()),
+                csc_mode,
                 &packages,
                 &partitions,
             );
@@ -802,4 +940,128 @@ fn main() {
     };
 
     std::process::exit(result);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_firmware_dir(test_name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "samloader-rs-{test_name}-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&dir).unwrap();
+        dir
+    }
+
+    fn write_package(dir: &Path, name: &str) {
+        let mut file = File::create(dir.join(name)).unwrap();
+        file.write_all(b"test").unwrap();
+    }
+
+    #[test]
+    fn folder_mode_defaults_to_home_csc() {
+        let dir = temp_firmware_dir("home-csc");
+        write_package(&dir, "AP_test.tar.md5");
+        write_package(&dir, "CSC_test.tar.md5");
+        write_package(&dir, "HOME_CSC_test.tar.md5");
+
+        let selection = scan_package_folder(dir.to_str().unwrap(), "home").unwrap();
+
+        assert!(selection.ap.unwrap().ends_with("AP_test.tar.md5"));
+        assert!(selection.csc.unwrap().ends_with("HOME_CSC_test.tar.md5"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn folder_mode_wipe_selects_regular_csc() {
+        let dir = temp_firmware_dir("wipe-csc");
+        write_package(&dir, "CSC_test.tar.md5");
+        write_package(&dir, "HOME_CSC_test.tar.md5");
+
+        let selection = scan_package_folder(dir.to_str().unwrap(), "wipe").unwrap();
+
+        assert!(selection.csc.unwrap().ends_with("CSC_test.tar.md5"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn folder_mode_home_rejects_regular_csc_fallback() {
+        let dir = temp_firmware_dir("home-rejects-csc");
+        write_package(&dir, "CSC_test.tar.md5");
+
+        let err = scan_package_folder(dir.to_str().unwrap(), "home").unwrap_err();
+
+        assert!(err.contains("--csc-mode wipe"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn folder_mode_prefers_md5_package_over_tar_package() {
+        let dir = temp_firmware_dir("prefer-md5");
+        write_package(&dir, "BL_test.tar");
+        write_package(&dir, "BL_test.tar.md5");
+
+        let selection = scan_package_folder(dir.to_str().unwrap(), "home").unwrap();
+
+        assert!(selection.bl.unwrap().ends_with("BL_test.tar.md5"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn coherent_packages() -> FolderPackages {
+        FolderPackages {
+            bl: Some("BL_S931BXXU1AYF1_release.tar.md5".to_string()),
+            ap: Some("AP_S931BXXU1AYF1_release.tar.md5".to_string()),
+            cp: Some("CP_S931BXXU1AYE9_release.tar.md5".to_string()),
+            csc: Some("CSC_OXM_S931BOXM1AYF1_release.tar.md5".to_string()),
+            userdata: None,
+        }
+    }
+
+    #[test]
+    fn explicit_package_slots_validate_build_and_model_identity() {
+        let packages = coherent_packages();
+        assert!(validate_package_selection(&packages, "wipe", false).is_ok());
+
+        let mut mixed_build = packages.clone();
+        mixed_build.ap = Some("AP_S931BXXU2ZZZ9_release.tar.md5".to_string());
+        assert!(validate_package_selection(&mixed_build, "wipe", false).is_err());
+
+        let mut mixed_model = packages;
+        mixed_model.cp = Some("CP_S938BXXU1AYE9_release.tar.md5".to_string());
+        assert!(validate_package_selection(&mixed_model, "wipe", false).is_err());
+    }
+
+    #[test]
+    fn repartition_requires_complete_factory_reset_package_set() {
+        let packages = coherent_packages();
+        assert!(validate_package_selection(&packages, "wipe", true).is_ok());
+        assert!(validate_package_selection(&packages, "home", true).is_err());
+
+        let mut incomplete = packages.clone();
+        incomplete.cp = None;
+        assert!(validate_package_selection(&incomplete, "wipe", true).is_err());
+
+        let mut home_csc = packages;
+        home_csc.csc = Some("HOME_CSC_OXM_S931BOXM1AYF1_release.tar.md5".to_string());
+        assert!(validate_package_selection(&home_csc, "wipe", true).is_err());
+    }
+
+    #[test]
+    fn folder_and_explicit_package_sources_are_mutually_exclusive() {
+        let explicit = FolderPackages {
+            bl: Some("BL_test.tar.md5".to_string()),
+            ..FolderPackages::default()
+        };
+        let error = resolve_package_selection(Some("unused"), "home", explicit).unwrap_err();
+        assert!(error.contains("either --folder or explicit"));
+    }
 }
