@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -69,7 +69,7 @@ fn move_file_no_replace(existing: &Path, destination: &Path) -> std::io::Result<
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct FolderPackages {
     bl: Option<String>,
@@ -247,6 +247,10 @@ struct FlashRequest {
     packages: FolderPackages,
     #[serde(default)]
     reviewed_packages: Option<Vec<PackageIdentity>>,
+    #[serde(default)]
+    zip: Option<String>,
+    #[serde(default)]
+    reviewed_zip: Option<PackageIdentity>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1460,38 +1464,162 @@ fn scan_package_folder_impl(folder: &str, csc_mode: &str) -> Result<FolderPackag
     })
 }
 
+fn select_zip_packages(names: &[String], csc_mode: &str) -> Result<FolderPackages, String> {
+    let mut bl = Vec::new();
+    let mut ap = Vec::new();
+    let mut cp = Vec::new();
+    let mut home_csc = Vec::new();
+    let mut csc = Vec::new();
+    let mut userdata = Vec::new();
+
+    for name in names {
+        if !is_tar_package_name(name) {
+            continue;
+        }
+        let upper_name = name.to_ascii_uppercase();
+        let path = PathBuf::from(name);
+        if upper_name.starts_with("BL_") {
+            bl.push(path);
+        } else if upper_name.starts_with("AP_") {
+            ap.push(path);
+        } else if upper_name.starts_with("CP_") {
+            cp.push(path);
+        } else if upper_name.starts_with("HOME_CSC_") {
+            home_csc.push(path);
+        } else if upper_name.starts_with("CSC_") {
+            csc.push(path);
+        } else if upper_name.starts_with("USERDATA_") {
+            userdata.push(path);
+        }
+    }
+
+    let home_csc = select_package("HOME_CSC", home_csc)?;
+    let csc = select_package("CSC", csc)?;
+    let selected_csc = match csc_mode {
+        "home" => {
+            if home_csc.is_none() && csc.is_some() {
+                return Err(
+                    "HOME_CSC package was not found in the ZIP. Use wipe mode to select CSC instead."
+                        .to_string(),
+                );
+            }
+            home_csc
+        }
+        "wipe" => {
+            if csc.is_none() && home_csc.is_some() {
+                return Err(
+                    "CSC package was not found in the ZIP. Use HOME_CSC mode instead.".to_string(),
+                );
+            }
+            csc
+        }
+        _ => return Err(format!("Unknown CSC mode: {csc_mode}")),
+    };
+
+    Ok(FolderPackages {
+        bl: select_package("BL", bl)?,
+        ap: select_package("AP", ap)?,
+        cp: select_package("CP", cp)?,
+        csc: selected_csc,
+        userdata: select_package("USERDATA", userdata)?,
+    })
+}
+
+struct ZipFlashPlan {
+    sources: Vec<TarSource>,
+    packages: FolderPackages,
+    non_stored: Vec<String>,
+}
+
+fn scan_zip_flash_plan(zip_path: &str, csc_mode: &str) -> Result<ZipFlashPlan, String> {
+    let file = File::open(zip_path)
+        .map_err(|error| format!("Failed to open firmware ZIP \"{zip_path}\": {error}"))?;
+    let entries =
+        samloader_fus::list_firmware_zip_entries(&file).map_err(|error| error.to_string())?;
+
+    let names: Vec<String> = entries.iter().map(|entry| entry.name.clone()).collect();
+    let packages = select_zip_packages(&names, csc_mode)?;
+    if packages.is_empty() {
+        return Err(format!(
+            "The firmware ZIP \"{zip_path}\" does not contain any BL/AP/CP/CSC/USERDATA packages."
+        ));
+    }
+
+    let mut member_names = Vec::new();
+    packages.append_to(&mut member_names);
+
+    let file = Arc::new(file);
+    let mut sources = Vec::new();
+    let mut non_stored = Vec::new();
+    for member in &member_names {
+        let entry = entries
+            .iter()
+            .find(|entry| &entry.name == member)
+            .expect("selected members always come from the entry list");
+        if !entry.is_stored {
+            non_stored.push(member.clone());
+            continue;
+        }
+        if entry.size == 0 {
+            return Err(format!("ZIP member \"{member}\" is empty."));
+        }
+        sources.push(TarSource {
+            display_name: format!("{member} (in {zip_path})"),
+            file: Arc::clone(&file),
+            base_offset: entry.data_start,
+            size: entry.size,
+            verify_md5: member.to_lowercase().ends_with(".md5"),
+        });
+    }
+    Ok(ZipFlashPlan {
+        sources,
+        packages,
+        non_stored,
+    })
+}
+
+fn verify_reviewed_zip(zip_path: &str, reviewed: &PackageIdentity) -> Result<(), String> {
+    let current = file_identity(zip_path)?;
+    if current != *reviewed {
+        return Err(
+            "The firmware ZIP changed after it was reviewed. Scan the ZIP again and review the updated package list before flashing."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn file_identity(path: &str) -> Result<PackageIdentity, String> {
+    let canonical = fs::canonicalize(path)
+        .map_err(|error| format!("Failed to resolve firmware package \"{path}\": {error}"))?;
+    let metadata = fs::metadata(&canonical)
+        .map_err(|error| format!("Failed to inspect firmware package \"{path}\": {error}"))?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        return Err(format!(
+            "Firmware package \"{path}\" is no longer a non-empty file. Scan the folder again."
+        ));
+    }
+    let modified = metadata.modified().map_err(|error| {
+        format!("Failed to read the modification time for firmware package \"{path}\": {error}")
+    })?;
+    let modified = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| format!("Firmware package \"{path}\" has an invalid modification time."))?;
+    let modified_unix_nanos = (u128::from(modified.as_secs()) * 1_000_000_000
+        + u128::from(modified.subsec_nanos()))
+    .to_string();
+    Ok(PackageIdentity {
+        path: path.to_string(),
+        canonical_path: canonical.to_string_lossy().to_string(),
+        size: metadata.len(),
+        modified_unix_nanos,
+    })
+}
+
 fn package_identities(packages: &FolderPackages) -> Result<Vec<PackageIdentity>, String> {
     let mut paths = Vec::new();
     packages.append_to(&mut paths);
-    paths
-        .into_iter()
-        .map(|path| {
-            let canonical = fs::canonicalize(&path)
-                .map_err(|error| format!("Failed to resolve firmware package \"{path}\": {error}"))?;
-            let metadata = fs::metadata(&canonical)
-                .map_err(|error| format!("Failed to inspect firmware package \"{path}\": {error}"))?;
-            if !metadata.is_file() || metadata.len() == 0 {
-                return Err(format!(
-                    "Firmware package \"{path}\" is no longer a non-empty file. Scan the folder again."
-                ));
-            }
-            let modified = metadata.modified().map_err(|error| {
-                format!("Failed to read the modification time for firmware package \"{path}\": {error}")
-            })?;
-            let modified = modified
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|_| format!("Firmware package \"{path}\" has an invalid modification time."))?;
-            let modified_unix_nanos = (u128::from(modified.as_secs()) * 1_000_000_000
-                + u128::from(modified.subsec_nanos()))
-            .to_string();
-            Ok(PackageIdentity {
-                path,
-                canonical_path: canonical.to_string_lossy().to_string(),
-                size: metadata.len(),
-                modified_unix_nanos,
-            })
-        })
-        .collect()
+    paths.into_iter().map(|path| file_identity(&path)).collect()
 }
 
 fn verify_reviewed_folder(
@@ -1611,12 +1739,19 @@ fn validate_download_list_entry(is_file: bool, size: u64, package: &str) -> Resu
     Ok(())
 }
 
-fn scan_tar_packages(
-    packages: &[String],
-    skip_md5: bool,
-    app: &AppHandle,
-) -> Result<(Vec<IndexedEntry>, Option<Vec<u8>>), String> {
-    let mut opened_packages = Vec::new();
+/// One TAR archive to scan, addressed as a byte range of an underlying file.
+/// A standalone `.tar`/`.tar.md5` file is `base_offset == 0, size == file length`;
+/// a member of a firmware ZIP uses the member's raw data range.
+struct TarSource {
+    display_name: String,
+    file: Arc<File>,
+    base_offset: u64,
+    size: u64,
+    verify_md5: bool,
+}
+
+fn tar_sources_from_paths(packages: &[String]) -> Result<Vec<TarSource>, String> {
+    let mut sources = Vec::new();
     for pkg in packages {
         let package_path = Path::new(pkg);
         let filename = package_path
@@ -1639,23 +1774,72 @@ fn scan_tar_packages(
         }
         let file =
             File::open(pkg).map_err(|e| format!("Failed to open package file \"{pkg}\": {e}"))?;
-        opened_packages.push((pkg, file));
+        sources.push(TarSource {
+            display_name: pkg.clone(),
+            file: Arc::new(file),
+            base_offset: 0,
+            size: metadata.len(),
+            verify_md5: pkg.to_lowercase().ends_with(".md5"),
+        });
+    }
+    Ok(sources)
+}
+
+fn scan_tar_packages(
+    packages: &[String],
+    skip_md5: bool,
+    app: &AppHandle,
+) -> Result<(Vec<IndexedEntry>, Option<Vec<u8>>), String> {
+    let sources = tar_sources_from_paths(packages)?;
+    scan_tar_sources(&sources, skip_md5, app)
+}
+
+fn scan_tar_sources(
+    sources: &[TarSource],
+    skip_md5: bool,
+    app: &AppHandle,
+) -> Result<(Vec<IndexedEntry>, Option<Vec<u8>>), String> {
+    // Map each source's byte range once; the region serves both MD5-footer
+    // verification and TAR header walking. Payload entries get their own
+    // per-entry mappings so FirmwareInfo can own them, exactly as before.
+    let mut regions = Vec::new();
+    for source in sources {
+        let region_size = usize::try_from(source.size).map_err(|_| {
+            format!(
+                "Firmware package \"{}\" is too large for this platform.",
+                source.display_name
+            )
+        })?;
+        let region = unsafe {
+            MmapOptions::new()
+                .offset(source.base_offset)
+                .len(region_size)
+                .map(source.file.as_ref())
+        }
+        .map_err(|e| {
+            format!(
+                "Failed to memory map package \"{}\": {e}",
+                source.display_name
+            )
+        })?;
+        regions.push(region);
     }
 
     if !skip_md5 {
-        for (pkg, file) in &mut opened_packages {
-            if pkg.to_lowercase().ends_with(".md5") {
+        for (source, region) in sources.iter().zip(&regions) {
+            if source.verify_md5 {
                 emit_flash(
                     app,
                     "verifying-md5",
                     None,
                     0.0,
-                    Some(format!("Verifying {pkg}")),
+                    Some(format!("Verifying {}", source.display_name)),
                 );
-                verify_md5_footer(&*file)
-                    .map_err(|e| format!("MD5 verification failed for \"{pkg}\": {e}"))?;
-                file.seek(SeekFrom::Start(0)).map_err(|e| {
-                    format!("Failed to seek package file \"{pkg}\" back to start: {e}")
+                verify_md5_footer(Cursor::new(&region[..])).map_err(|e| {
+                    format!(
+                        "MD5 verification failed for \"{}\": {e}",
+                        source.display_name
+                    )
                 })?;
             }
         }
@@ -1664,12 +1848,10 @@ fn scan_tar_packages(
     let mut archives_download_lists: Vec<HashSet<String>> = Vec::new();
     let mut all_packages_entries: Vec<Vec<IndexedEntry>> = Vec::new();
 
-    for (pkg, file) in &opened_packages {
-        let source_file = Arc::new(
-            file.try_clone()
-                .map_err(|error| format!("Failed to retain package file \"{pkg}\": {error}"))?,
-        );
-        let mut archive = Archive::new(file);
+    for (source, region) in sources.iter().zip(&regions) {
+        let pkg = &source.display_name;
+        let source_file = Arc::clone(&source.file);
+        let mut archive = Archive::new(Cursor::new(&region[..]));
         let entries = archive
             .entries()
             .map_err(|e| format!("Failed to read archive entries for \"{pkg}\": {e}"))?;
@@ -1687,7 +1869,7 @@ fn scan_tar_packages(
                 .to_string_lossy()
                 .to_string();
 
-            let offset = entry.raw_file_position();
+            let offset = source.base_offset + entry.raw_file_position();
             let size = entry.size();
             let mapping_size = usize::try_from(size).map_err(|_| {
                 format!(
@@ -1733,7 +1915,7 @@ fn scan_tar_packages(
                     MmapOptions::new()
                         .offset(offset)
                         .len(mapping_size)
-                        .map(file)
+                        .map(source.file.as_ref())
                 }
                 .map_err(|e| {
                     format!("Failed to memory map entry \"{entry_path}\" in package \"{pkg}\": {e}")
@@ -2187,7 +2369,32 @@ where
 
 fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
     let usb_backend = backend_from_str(&req.backend)?;
-    let selected_packages = if let Some(folder) = &req.folder {
+    let zip_source = req.zip.clone();
+    let selected_packages = if let Some(zip_path) = zip_source.as_deref() {
+        if req.folder.is_some() {
+            return Err(
+                "Choose either a firmware ZIP or an extracted folder, not both.".to_string(),
+            );
+        }
+        let Some(reviewed) = req.reviewed_zip.as_ref() else {
+            return Err("Review the firmware ZIP before flashing. Scan the ZIP again.".to_string());
+        };
+        verify_reviewed_zip(zip_path, reviewed)?;
+        let plan = scan_zip_flash_plan(zip_path, &req.csc_mode)?;
+        if !plan.non_stored.is_empty() {
+            return Err(format!(
+                "{} is compressed inside the ZIP archive and cannot be flashed in place. Extract the ZIP and flash the extracted folder instead.",
+                plan.non_stored.join(", ")
+            ));
+        }
+        if plan.packages != req.packages {
+            return Err(
+                "The firmware ZIP contents changed after review. Scan the ZIP again and review the updated package list before flashing."
+                    .to_string(),
+            );
+        }
+        plan.packages
+    } else if let Some(folder) = req.folder.as_deref() {
         if !req.packages.is_empty() {
             return Err(
                 "Choose either a firmware folder or individual package slots, not both."
@@ -2236,7 +2443,12 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
         pit_file_bytes = Some(buffer);
     }
 
-    let (resolved_entries, packaged_pit) = scan_tar_packages(&packages, req.skip_md5, &app)?;
+    let (resolved_entries, packaged_pit) = if let Some(zip_path) = zip_source.as_deref() {
+        let plan = scan_zip_flash_plan(zip_path, &req.csc_mode)?;
+        scan_tar_sources(&plan.sources, req.skip_md5, &app)?
+    } else {
+        scan_tar_packages(&packages, req.skip_md5, &app)?
+    };
     if resolved_entries.is_empty() {
         return Err(
             "The selected packages do not contain any non-empty flashable files.".to_string(),
@@ -2860,6 +3072,25 @@ fn scan_firmware_folder(folder: String, csc_mode: String) -> Result<FolderScanRe
     })
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ZipScanResult {
+    packages: FolderPackages,
+    identity: PackageIdentity,
+    non_stored: Vec<String>,
+}
+
+#[tauri::command]
+fn scan_firmware_zip(path: String, csc_mode: String) -> Result<ZipScanResult, String> {
+    let plan = scan_zip_flash_plan(&path, &csc_mode)?;
+    let identity = file_identity(&path)?;
+    Ok(ZipScanResult {
+        packages: plan.packages,
+        identity,
+        non_stored: plan.non_stored,
+    })
+}
+
 async fn run_blocking<T, F>(task: F) -> Result<T, String>
 where
     T: Send + 'static,
@@ -3342,6 +3573,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             app_info,
             scan_firmware_folder,
+            scan_firmware_zip,
             check_updates,
             detect_android_device,
             prepare_download,
@@ -3836,5 +4068,92 @@ mod tests {
         assert!(is_lz4_payload(&0x184d_2204_u32.to_le_bytes(), false));
         assert!(is_lz4_payload(b"raw", true));
         assert!(!is_lz4_payload(b"raw", false));
+    }
+
+    fn tar_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(Vec::new());
+        for (name, bytes) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append_data(&mut header, name, *bytes).unwrap();
+        }
+        builder.into_inner().unwrap()
+    }
+
+    fn tar_md5_bytes(member_name: &str, entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut bytes = tar_bytes(entries);
+        let mut hasher = fast_md5::Md5::new();
+        hasher.update(&bytes);
+        let digest = hasher.finalize();
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        bytes.extend_from_slice(format!("{hex}  {member_name}\n").as_bytes());
+        bytes
+    }
+
+    fn write_firmware_zip(path: &Path, members: &[(&str, &[u8], zip::CompressionMethod)]) {
+        let file = File::create(path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        for (name, bytes, method) in members {
+            let options = zip::write::SimpleFileOptions::default().compression_method(*method);
+            writer.start_file(*name, options).unwrap();
+            std::io::Write::write_all(&mut writer, bytes).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn zip_scan_reports_members_identity_and_compression() {
+        let directory = temp_test_dir("gui-zip-scan");
+        fs::create_dir_all(&directory).unwrap();
+        let zip_path = directory.join("firmware.zip");
+        let ap = tar_md5_bytes("AP_S931B_t.tar.md5", &[("persist.img", b"p")]);
+        let csc = tar_md5_bytes("HOME_CSC_S931B_t.tar.md5", &[("cache.img", b"c")]);
+        write_firmware_zip(
+            &zip_path,
+            &[
+                ("AP_S931B_t.tar.md5", &ap, zip::CompressionMethod::Stored),
+                (
+                    "HOME_CSC_S931B_t.tar.md5",
+                    &csc,
+                    zip::CompressionMethod::Deflated,
+                ),
+            ],
+        );
+        let result =
+            scan_firmware_zip(zip_path.to_string_lossy().to_string(), "home".to_string()).unwrap();
+        assert_eq!(result.packages.ap.as_deref(), Some("AP_S931B_t.tar.md5"));
+        assert_eq!(
+            result.non_stored,
+            vec!["HOME_CSC_S931B_t.tar.md5".to_string()]
+        );
+        assert_eq!(
+            result.identity.size,
+            std::fs::metadata(&zip_path).unwrap().len()
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn reviewed_zip_identity_mismatch_fails_closed() {
+        let directory = temp_test_dir("gui-zip-toctou");
+        fs::create_dir_all(&directory).unwrap();
+        let zip_path = directory.join("firmware.zip");
+        let ap = tar_md5_bytes("AP_t.tar.md5", &[("persist.img", b"p")]);
+        write_firmware_zip(
+            &zip_path,
+            &[("AP_t.tar.md5", &ap, zip::CompressionMethod::Stored)],
+        );
+        let zip_str = zip_path.to_string_lossy().to_string();
+        let reviewed = file_identity(&zip_str).unwrap();
+
+        // Mutate the file after review.
+        let mut bytes = std::fs::read(&zip_path).unwrap();
+        bytes.push(0);
+        std::fs::write(&zip_path, bytes).unwrap();
+
+        assert!(verify_reviewed_zip(&zip_str, &reviewed).is_err());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }
