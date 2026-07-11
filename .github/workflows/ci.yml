@@ -1,0 +1,79 @@
+name: samloader CI
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows release gate
+    runs-on: windows-2025
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: samloader-gui/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: 1.94.1
+          components: clippy, rustfmt
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Install pinned Rust dependency auditor
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Install frontend dependencies
+        working-directory: samloader-gui
+        run: npm ci
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint Rust
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      - name: Test Rust (debug)
+        run: cargo test --locked --workspace
+
+      - name: Test Rust (release)
+        run: cargo test --locked --release --workspace
+
+      - name: Audit frontend dependencies
+        working-directory: samloader-gui
+        run: npm audit --audit-level=high
+
+      - name: Test frontend safety helpers
+        working-directory: samloader-gui
+        run: npm test
+
+      - name: Build frontend
+        working-directory: samloader-gui
+        run: npm run build
+
+      - name: Build desktop release executable
+        working-directory: samloader-gui
+        run: npm.cmd run tauri -- build --no-bundle -- --locked
+
+      - name: Audit Rust dependencies
+        run: cargo audit --deny unsound --deny yanked --ignore RUSTSEC-2024-0429
