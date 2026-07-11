@@ -416,6 +416,10 @@ fn is_pit_metadata_partition(name: &str) -> bool {
     name == "PIT" || name.starts_with("PGPT") || name.starts_with("SGPT") || name.starts_with("MD5")
 }
 
+fn is_growable_zero_partition(name: &str) -> bool {
+    name.trim().eq_ignore_ascii_case("USERDATA")
+}
+
 pub(crate) fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
     if pit_data.entries.is_empty() {
         return Err(format!("The {label} PIT contains no partition entries."));
@@ -450,11 +454,15 @@ pub(crate) fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(),
             ));
         }
 
+        let flash_filename = entry.flash_filename.to_string_lossy();
+        let flash_filename = flash_filename.trim();
         if entry.block_count == 0 {
-            let upper_name = partition_name.to_ascii_uppercase();
-            if !matches!(upper_name.as_str(), "PAD" | "USERDATA") {
+            // Modern Samsung PITs contain legitimate zero-sized reserved/key
+            // entries (for example UL_KEYS). They are safe when they have no
+            // payload mapping. USERDATA may intentionally be grow-to-fill.
+            if !flash_filename.is_empty() && !is_growable_zero_partition(&partition_name) {
                 return Err(format!(
-                    "The {label} PIT gives partition {partition_name} a zero block count."
+                    "The {label} PIT maps payload {flash_filename} to zero-sized partition {partition_name}."
                 ));
             }
         } else if matches!(entry.device_type, DeviceType::MMC | DeviceType::UFS)
@@ -475,9 +483,9 @@ pub(crate) fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(),
             ));
         }
 
-        let filename = entry.flash_filename.to_string_lossy();
-        let filename = filename.trim();
-        if !filename.is_empty() {
+        if !flash_filename.is_empty()
+            && (entry.block_count > 0 || is_growable_zero_partition(&partition_name))
+        {
             flashable_count += 1;
         }
     }

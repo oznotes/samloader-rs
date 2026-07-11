@@ -1845,6 +1845,10 @@ fn is_pit_metadata_partition(name: &str) -> bool {
     name == "PIT" || name.starts_with("PGPT") || name.starts_with("SGPT") || name.starts_with("MD5")
 }
 
+fn is_growable_zero_partition(name: &str) -> bool {
+    name.trim().eq_ignore_ascii_case("USERDATA")
+}
+
 fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
     if pit_data.entries.is_empty() {
         return Err(format!("The {label} PIT contains no partition entries."));
@@ -1880,11 +1884,15 @@ fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
             ));
         }
 
+        let flash_filename = entry.flash_filename.to_string_lossy();
+        let flash_filename = flash_filename.trim();
         if entry.block_count == 0 {
-            let upper_name = partition_name.to_ascii_uppercase();
-            if !matches!(upper_name.as_str(), "PAD" | "USERDATA") {
+            // Reserved/key entries such as UL_KEYS may legitimately have no
+            // allocated blocks. Only reject a zero-sized entry when the PIT
+            // actually maps a payload to it; USERDATA may be grow-to-fill.
+            if !flash_filename.is_empty() && !is_growable_zero_partition(&partition_name) {
                 return Err(format!(
-                    "The {label} PIT gives partition {partition_name} a zero block count."
+                    "The {label} PIT maps payload {flash_filename} to zero-sized partition {partition_name}."
                 ));
             }
         } else if matches!(entry.device_type, DeviceType::MMC | DeviceType::UFS)
@@ -1905,12 +1913,11 @@ fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
             ));
         }
 
-        let filename = entry.flash_filename.to_string_lossy();
-        let filename = filename.trim();
-        if filename.is_empty() {
-            continue;
+        if !flash_filename.is_empty()
+            && (entry.block_count > 0 || is_growable_zero_partition(&partition_name))
+        {
+            flashable_count += 1;
         }
-        flashable_count += 1;
     }
 
     for ((device, unit), group_extents) in &mut extents {
@@ -3328,7 +3335,12 @@ fn main() {
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner())
                     .as_ref()
-                    .map(ActiveOperation::label);
+                    .and_then(|operation| match operation {
+                        ActiveOperation::Download(_) | ActiveOperation::Flash => {
+                            Some(operation.label())
+                        }
+                        ActiveOperation::Device(_) => None,
+                    });
                 if let Some(label) = active_label {
                     api.prevent_close();
                     let _ = window.emit(
@@ -3694,8 +3706,17 @@ mod tests {
         assert!(
             validate_pit_layout(&zero_sized, "selected")
                 .unwrap_err()
-                .contains("zero block count")
+                .contains("zero-sized partition")
         );
+
+        let reserved_index = current
+            .entries
+            .iter()
+            .position(|entry| entry.flash_filename.to_string_lossy().trim().is_empty())
+            .unwrap();
+        let mut reserved_zero = PitData::new(bytes).unwrap();
+        reserved_zero.entries[reserved_index].block_count = 0;
+        validate_pit_layout(&reserved_zero, "device").unwrap();
 
         let mut invalid_unit = PitData::new(bytes).unwrap();
         invalid_unit.entries[storage_entry_index].file_offset = u32::from(invalid_unit.lu_count);

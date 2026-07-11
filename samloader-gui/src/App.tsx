@@ -28,7 +28,6 @@ import {
 } from "@phosphor-icons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -575,27 +574,6 @@ export function App() {
     setPreparingVersion("");
     setDownloadState((current) => current === "preparing" ? "idle" : current);
   }, [view]);
-
-  useEffect(() => {
-    if (!hasTauriRuntime()) return;
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void getCurrentWindow().onCloseRequested((event) => {
-      const operation = activeOperationRef.current;
-      if (!operation) return;
-      event.preventDefault();
-      modalReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      setCloseBlockedMessage("");
-      setCloseBlocked(operation);
-    }).then((dispose) => {
-      if (disposed) dispose();
-      else unlisten = dispose;
-    }).catch(() => undefined);
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
 
   useEffect(() => {
     if (!activeOperation) {
