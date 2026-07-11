@@ -10,3 +10,6 @@ samloader-gui/src-tauri/tauri.release.conf.json
 ._*
 *~
 /samloader_ui_work
+
+# Local-only planning notes (kept in working copy, never committed)
+/docs/
