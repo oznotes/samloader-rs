@@ -20,3 +20,7 @@ This release hardens samloader for public desktop distribution.
   preferences, stale-state cleanup, and accessibility improvements.
 - Adds debug and release test gates, dependency audits, signed Windows release
   automation, checksums, security policy, and third-party notices.
+- Flash firmware directly from the downloaded ZIP without extracting it (CLI:
+  samloader flash --zip; GUI: "Firmware ZIP" flash mode + "Flash this
+  firmware" after download). Compressed (non-STORE) archives fail closed with
+  an extract-and-use-folder-mode message.
