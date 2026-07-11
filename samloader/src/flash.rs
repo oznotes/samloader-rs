@@ -23,7 +23,7 @@ use samloader_odin::{
 use samloader_pit::{DeviceType, PitData, PitEntry};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Cursor, Read};
 use std::path::Path;
 use std::sync::Arc;
 use tar::Archive;
@@ -86,16 +86,23 @@ fn validate_payload_entry(
 
 const MAX_DOWNLOAD_LIST_SIZE: u64 = 1024 * 1024;
 
-fn scan_tar_packages(
-    packages: &[String],
-    skip_md5: bool,
-) -> Result<(Vec<IndexedEntry>, Option<Vec<u8>>), i32> {
-    // Open all packages into a File first
-    let mut opened_packages = Vec::new();
+/// One TAR archive to scan, addressed as a byte range of an underlying file.
+/// A standalone `.tar`/`.tar.md5` file is `base_offset == 0, size == file length`;
+/// a member of a firmware ZIP uses the member's raw data range.
+struct TarSource {
+    display_name: String,
+    file: Arc<File>,
+    base_offset: u64,
+    size: u64,
+    verify_md5: bool,
+}
+
+fn tar_sources_from_paths(packages: &[String]) -> Result<Vec<TarSource>, i32> {
+    let mut sources = Vec::new();
     for pkg in packages {
         let package_path = Path::new(pkg);
-        match package_path.metadata() {
-            Ok(metadata) if metadata.is_file() && metadata.len() > 0 => {}
+        let size = match package_path.metadata() {
+            Ok(metadata) if metadata.is_file() && metadata.len() > 0 => metadata.len(),
             Ok(_) => {
                 print_error!("Firmware package \"{}\" is not a non-empty file.", pkg);
                 return Err(1);
@@ -104,7 +111,7 @@ fn scan_tar_packages(
                 print_error!("Failed to inspect package file \"{}\": {}", pkg, error);
                 return Err(1);
             }
-        }
+        };
         let file = match File::open(pkg) {
             Ok(f) => f,
             Err(e) => {
@@ -112,24 +119,70 @@ fn scan_tar_packages(
                 return Err(1);
             }
         };
-        opened_packages.push((pkg, file));
+        sources.push(TarSource {
+            display_name: pkg.clone(),
+            file: Arc::new(file),
+            base_offset: 0,
+            size,
+            verify_md5: pkg.to_lowercase().ends_with(".md5"),
+        });
+    }
+    Ok(sources)
+}
+
+fn scan_tar_packages(
+    packages: &[String],
+    skip_md5: bool,
+) -> Result<(Vec<IndexedEntry>, Option<Vec<u8>>), i32> {
+    let sources = tar_sources_from_paths(packages)?;
+    scan_tar_sources(&sources, skip_md5)
+}
+
+fn scan_tar_sources(
+    sources: &[TarSource],
+    skip_md5: bool,
+) -> Result<(Vec<IndexedEntry>, Option<Vec<u8>>), i32> {
+    // Map each source's byte range once; the region serves both MD5-footer
+    // verification and TAR header walking. Payload entries get their own
+    // per-entry mappings so FirmwareInfo can own them, exactly as before.
+    let mut regions = Vec::new();
+    for source in sources {
+        let region_size = match usize::try_from(source.size) {
+            Ok(size) => size,
+            Err(_) => {
+                print_error!(
+                    "Firmware package \"{}\" is too large for this platform.",
+                    source.display_name
+                );
+                return Err(1);
+            }
+        };
+        let region = match unsafe {
+            MmapOptions::new()
+                .offset(source.base_offset)
+                .len(region_size)
+                .map(source.file.as_ref())
+        } {
+            Ok(m) => m,
+            Err(error) => {
+                print_error!(
+                    "Failed to memory map package \"{}\": {}",
+                    source.display_name,
+                    error
+                );
+                return Err(1);
+            }
+        };
+        regions.push(region);
     }
 
     // MD5 verification of .tar.md5 packages
     if !skip_md5 {
-        for (pkg, file) in &mut opened_packages {
-            if pkg.to_lowercase().ends_with(".md5") {
-                println!("Verifying MD5 checksum for {}...", pkg);
-                if let Err(e) = verify_md5_footer(&*file) {
+        for (source, region) in sources.iter().zip(&regions) {
+            if source.verify_md5 {
+                println!("Verifying MD5 checksum for {}...", source.display_name);
+                if let Err(e) = verify_md5_footer(Cursor::new(&region[..])) {
                     print_error!("{}", e);
-                    return Err(1);
-                }
-                if let Err(e) = file.seek(SeekFrom::Start(0)) {
-                    print_error!(
-                        "Failed to seek package file \"{}\" back to start: {}",
-                        pkg,
-                        e
-                    );
                     return Err(1);
                 }
                 println!("MD5 verification successful!\n");
@@ -141,15 +194,10 @@ fn scan_tar_packages(
     let mut archives_download_lists: Vec<HashSet<String>> = Vec::new();
     let mut all_packages_entries: Vec<Vec<IndexedEntry>> = Vec::new();
 
-    for (pkg, file) in &opened_packages {
-        let source_file = match file.try_clone() {
-            Ok(file) => Arc::new(file),
-            Err(error) => {
-                print_error!("Failed to retain package file \"{}\": {}", pkg, error);
-                return Err(1);
-            }
-        };
-        let mut archive = Archive::new(file);
+    for (source, region) in sources.iter().zip(&regions) {
+        let pkg = &source.display_name;
+        let source_file = Arc::clone(&source.file);
+        let mut archive = Archive::new(Cursor::new(&region[..]));
         let entries = match archive.entries() {
             Ok(e) => e,
             Err(e) => {
@@ -179,7 +227,7 @@ fn scan_tar_packages(
                 }
             };
 
-            let offset = entry.raw_file_position();
+            let offset = source.base_offset + entry.raw_file_position();
             let size = entry.size();
             let mapping_size = match usize::try_from(size) {
                 Ok(size) => size,
@@ -253,7 +301,7 @@ fn scan_tar_packages(
                     MmapOptions::new()
                         .offset(offset)
                         .len(mapping_size)
-                        .map(file)
+                        .map(source.file.as_ref())
                 } {
                     Ok(m) => m,
                     Err(_) => {
@@ -1458,6 +1506,56 @@ mod tests {
             &[],
         );
         assert_eq!(result, 1);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn tar_source_at_nonzero_offset_scans_identically() {
+        let directory = temp_test_dir("offset-source");
+        let container = directory.join("container.bin");
+
+        // Build tar bytes in memory, then write them at offset 8 inside a container file.
+        let mut builder = Builder::new(Vec::new());
+        let mut header = Header::new_gnu();
+        let payload = b"persist-bytes";
+        header.set_size(payload.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "persist.img", payload.as_slice())
+            .unwrap();
+        let tar_bytes = builder.into_inner().unwrap();
+
+        let mut container_bytes = b"JUNKPAD!".to_vec();
+        container_bytes.extend_from_slice(&tar_bytes);
+        fs::write(&container, &container_bytes).unwrap();
+
+        let source = TarSource {
+            display_name: "container.bin!inner.tar".to_string(),
+            file: Arc::new(File::open(&container).unwrap()),
+            base_offset: 8,
+            size: tar_bytes.len() as u64,
+            verify_md5: false,
+        };
+
+        let (entries, pit) = scan_tar_sources(&[source], true).unwrap();
+        assert!(pit.is_none());
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].normalized_name, "persist.img");
+        assert_eq!(&entries[0].mmap[..], payload);
+        // The payload sits after the 512-byte tar header; source_offset is
+        // absolute in the container file (base 8 + tar-relative position).
+        assert_eq!(entries[0].source_offset, 8 + 512);
+        // Re-mapping from the recorded absolute offset must yield the same bytes
+        // (this is what multi-slot payloads like dspso.bin rely on).
+        let remap = unsafe {
+            MmapOptions::new()
+                .offset(entries[0].source_offset)
+                .len(entries[0].source_size)
+                .map(entries[0].source_file.as_ref())
+        }
+        .unwrap();
+        assert_eq!(&remap[..], payload);
         fs::remove_dir_all(directory).unwrap();
     }
 }
