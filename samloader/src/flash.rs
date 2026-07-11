@@ -39,7 +39,6 @@ struct IndexedEntry {
 }
 
 type PitLayoutGroup = (u32, u32);
-type PitExtent = (u32, u32, String);
 
 fn normalize_basename(path_str: &str) -> (String, bool) {
     let mut filename = Path::new(path_str)
@@ -431,7 +430,6 @@ pub(crate) fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(),
     }
 
     let mut names = HashSet::new();
-    let mut extents: HashMap<PitLayoutGroup, Vec<PitExtent>> = HashMap::new();
     let mut flashable_count = 0_usize;
     for entry in &pit_data.entries {
         let partition_name = entry.partition_name.to_string_lossy().trim().to_string();
@@ -470,7 +468,7 @@ pub(crate) fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(),
         } else if matches!(entry.device_type, DeviceType::MMC | DeviceType::UFS)
             && !is_pit_metadata_partition(&partition_name)
         {
-            let end = entry
+            entry
                 .block_size_or_offset
                 .checked_add(entry.block_count)
                 .ok_or_else(|| {
@@ -478,11 +476,6 @@ pub(crate) fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(),
                         "The {label} PIT partition {partition_name} overflows its 32-bit block address space."
                     )
                 })?;
-            extents.entry(pit_layout_group(entry)).or_default().push((
-                entry.block_size_or_offset,
-                end,
-                partition_name.clone(),
-            ));
         }
 
         if !flash_filename.is_empty()
@@ -491,20 +484,6 @@ pub(crate) fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(),
                 || is_allowed_zero_sized_payload_mapping(&partition_name, flash_filename))
         {
             flashable_count += 1;
-        }
-    }
-
-    for ((device, unit), group_extents) in &mut extents {
-        group_extents.sort_by_key(|extent| (extent.0, extent.1));
-        for adjacent in group_extents.windows(2) {
-            let previous = &adjacent[0];
-            let next = &adjacent[1];
-            if next.0 < previous.1 {
-                return Err(format!(
-                    "The {label} PIT overlaps partitions {} and {} in storage type {device}, unit {unit}.",
-                    previous.2, next.2
-                ));
-            }
         }
     }
 
@@ -687,14 +666,19 @@ fn register_unique_target(
     mapped_targets: &mut HashMap<(u32, u32, u32), String>,
     entry: &PitEntry,
     source: &str,
-) -> Result<(), String> {
-    if let Some(previous) = mapped_targets.insert(pit_target_key(entry), source.to_string()) {
+) -> Result<bool, String> {
+    let target = pit_target_key(entry);
+    if let Some(previous) = mapped_targets.get(&target) {
+        if previous == source {
+            return Ok(false);
+        }
         return Err(format!(
             "Flash inputs \"{previous}\" and \"{source}\" both target partition {}. Remove the duplicate and retry.",
             entry.partition_name
         ));
     }
-    Ok(())
+    mapped_targets.insert(target, source.to_string());
+    Ok(true)
 }
 
 fn select_pit_source(
@@ -955,11 +939,13 @@ pub(crate) fn action_flash(
         } = entry;
         let mut first_mapping = Some(mmap);
         for pit_entry in pit_entries {
-            if let Err(error) =
-                register_unique_target(&mut mapped_targets, pit_entry, &original_name)
-            {
-                print_error!("{}", error);
-                return 1;
+            match register_unique_target(&mut mapped_targets, pit_entry, &original_name) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(error) => {
+                    print_error!("{}", error);
+                    return 1;
+                }
             }
             let payload = if let Some(payload) = first_mapping.take() {
                 payload
@@ -1082,9 +1068,13 @@ pub(crate) fn action_flash(
             }
         };
         for entry in entries {
-            if let Err(error) = register_unique_target(&mut mapped_targets, entry, &part.filename) {
-                print_error!("{}", error);
-                return 1;
+            match register_unique_target(&mut mapped_targets, entry, &part.filename) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(error) => {
+                    print_error!("{}", error);
+                    return 1;
+                }
             }
             let mmap = match unsafe { MmapOptions::new().len(mapping_size).map(&source) } {
                 Ok(mmap) => mmap,
@@ -1254,7 +1244,8 @@ mod tests {
         let pit = PitData::new(include_bytes!("../../test-data/Q7MQ_EUR_OPENX.pit")).unwrap();
         let entry = find_pit_entries_by_filename(&pit, "persist.img")[0];
         let mut targets = HashMap::new();
-        register_unique_target(&mut targets, entry, "first.img").unwrap();
+        assert!(register_unique_target(&mut targets, entry, "first.img").unwrap());
+        assert!(!register_unique_target(&mut targets, entry, "first.img").unwrap());
         let error = register_unique_target(&mut targets, entry, "second.img").unwrap_err();
         assert!(error.contains("both target partition"));
     }

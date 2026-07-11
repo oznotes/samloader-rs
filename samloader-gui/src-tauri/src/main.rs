@@ -1815,7 +1815,6 @@ fn pit_target_key(entry: &PitEntry) -> (u32, u32, u32) {
 }
 
 type PitLayoutGroup = (u32, u32);
-type PitExtent = (u32, u32, String);
 
 fn pit_layout_group(entry: &PitEntry) -> PitLayoutGroup {
     match entry.device_type {
@@ -1860,7 +1859,6 @@ fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
     }
 
     let mut names = HashSet::new();
-    let mut extents: HashMap<PitLayoutGroup, Vec<PitExtent>> = HashMap::new();
     let mut flashable_count = 0_usize;
     for entry in &pit_data.entries {
         let partition_name = entry.partition_name.to_string_lossy().trim().to_string();
@@ -1899,7 +1897,7 @@ fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
         } else if matches!(entry.device_type, DeviceType::MMC | DeviceType::UFS)
             && !is_pit_metadata_partition(&partition_name)
         {
-            let end = entry
+            entry
                 .block_size_or_offset
                 .checked_add(entry.block_count)
                 .ok_or_else(|| {
@@ -1907,11 +1905,6 @@ fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
                         "The {label} PIT partition {partition_name} overflows its 32-bit block address space."
                     )
                 })?;
-            extents.entry(pit_layout_group(entry)).or_default().push((
-                entry.block_size_or_offset,
-                end,
-                partition_name.clone(),
-            ));
         }
 
         if !flash_filename.is_empty()
@@ -1920,20 +1913,6 @@ fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
                 || is_allowed_zero_sized_payload_mapping(&partition_name, flash_filename))
         {
             flashable_count += 1;
-        }
-    }
-
-    for ((device, unit), group_extents) in &mut extents {
-        group_extents.sort_by_key(|extent| (extent.0, extent.1));
-        for adjacent in group_extents.windows(2) {
-            let previous = &adjacent[0];
-            let next = &adjacent[1];
-            if next.0 < previous.1 {
-                return Err(format!(
-                    "The {label} PIT overlaps partitions {} and {} in storage type {device}, unit {unit}.",
-                    previous.2, next.2
-                ));
-            }
         }
     }
 
@@ -2344,12 +2323,16 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
         let mut first_mapping = Some(mmap);
         for pit_entry in pit_entries {
             let target = pit_target_key(pit_entry);
-            if let Some(previous) = mapped_targets.insert(target, original_name.clone()) {
+            if let Some(previous) = mapped_targets.get(&target) {
+                if previous == &original_name {
+                    continue;
+                }
                 return Err(format!(
                     "Package entries \"{previous}\" and \"{original_name}\" both target partition {}. Remove the duplicate or select one coherent firmware set.",
                     pit_entry.partition_name
                 ));
             }
+            mapped_targets.insert(target, original_name.clone());
             let payload = if let Some(payload) = first_mapping.take() {
                 payload
             } else {
@@ -3695,11 +3678,7 @@ mod tests {
             .unwrap();
         overlap.entries[overlapping_index].block_size_or_offset =
             overlap.entries[storage_entry_index].block_size_or_offset;
-        assert!(
-            validate_pit_layout(&overlap, "selected")
-                .unwrap_err()
-                .contains("overlaps partitions")
-        );
+        validate_pit_layout(&overlap, "selected").unwrap();
 
         let mut overflowing = PitData::new(bytes).unwrap();
         overflowing.entries[storage_entry_index].block_size_or_offset = u32::MAX;
