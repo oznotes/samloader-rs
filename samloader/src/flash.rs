@@ -420,6 +420,11 @@ fn is_growable_zero_partition(name: &str) -> bool {
     name.trim().eq_ignore_ascii_case("USERDATA")
 }
 
+fn is_allowed_zero_sized_payload_mapping(partition_name: &str, flash_filename: &str) -> bool {
+    partition_name.trim().eq_ignore_ascii_case("UL_KEYS")
+        && flash_filename.trim().eq_ignore_ascii_case("ul_key.bin")
+}
+
 pub(crate) fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
     if pit_data.entries.is_empty() {
         return Err(format!("The {label} PIT contains no partition entries."));
@@ -458,9 +463,12 @@ pub(crate) fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(),
         let flash_filename = flash_filename.trim();
         if entry.block_count == 0 {
             // Modern Samsung PITs contain legitimate zero-sized reserved/key
-            // entries (for example UL_KEYS). They are safe when they have no
-            // payload mapping. USERDATA may intentionally be grow-to-fill.
-            if !flash_filename.is_empty() && !is_growable_zero_partition(&partition_name) {
+            // payload mappings such as UL_KEYS/ul_key.bin. USERDATA may
+            // intentionally be grow-to-fill.
+            if !flash_filename.is_empty()
+                && !is_growable_zero_partition(&partition_name)
+                && !is_allowed_zero_sized_payload_mapping(&partition_name, flash_filename)
+            {
                 return Err(format!(
                     "The {label} PIT maps payload {flash_filename} to zero-sized partition {partition_name}."
                 ));
@@ -484,7 +492,9 @@ pub(crate) fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(),
         }
 
         if !flash_filename.is_empty()
-            && (entry.block_count > 0 || is_growable_zero_partition(&partition_name))
+            && (entry.block_count > 0
+                || is_growable_zero_partition(&partition_name)
+                || is_allowed_zero_sized_payload_mapping(&partition_name, flash_filename))
         {
             flashable_count += 1;
         }
@@ -1219,6 +1229,12 @@ mod tests {
         let candidate = PitData::new(bytes).unwrap();
         validate_pit_layout(&current, "device").unwrap();
         validate_repartition_compatibility(&current, &candidate).unwrap();
+
+        assert!(is_allowed_zero_sized_payload_mapping(
+            "UL_KEYS",
+            "ul_key.bin"
+        ));
+        assert!(!is_allowed_zero_sized_payload_mapping("BOOT_A", "boot.img"));
 
         let mut incompatible = PitData::new(bytes).unwrap();
         incompatible.lu_count = incompatible.lu_count.saturating_add(1);

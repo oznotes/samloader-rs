@@ -1849,6 +1849,11 @@ fn is_growable_zero_partition(name: &str) -> bool {
     name.trim().eq_ignore_ascii_case("USERDATA")
 }
 
+fn is_allowed_zero_sized_payload_mapping(partition_name: &str, flash_filename: &str) -> bool {
+    partition_name.trim().eq_ignore_ascii_case("UL_KEYS")
+        && flash_filename.trim().eq_ignore_ascii_case("ul_key.bin")
+}
+
 fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
     if pit_data.entries.is_empty() {
         return Err(format!("The {label} PIT contains no partition entries."));
@@ -1887,10 +1892,13 @@ fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
         let flash_filename = entry.flash_filename.to_string_lossy();
         let flash_filename = flash_filename.trim();
         if entry.block_count == 0 {
-            // Reserved/key entries such as UL_KEYS may legitimately have no
-            // allocated blocks. Only reject a zero-sized entry when the PIT
-            // actually maps a payload to it; USERDATA may be grow-to-fill.
-            if !flash_filename.is_empty() && !is_growable_zero_partition(&partition_name) {
+            // Reserved/key entries may legitimately have zero-sized payload
+            // mappings such as UL_KEYS/ul_key.bin. USERDATA may be
+            // grow-to-fill.
+            if !flash_filename.is_empty()
+                && !is_growable_zero_partition(&partition_name)
+                && !is_allowed_zero_sized_payload_mapping(&partition_name, flash_filename)
+            {
                 return Err(format!(
                     "The {label} PIT maps payload {flash_filename} to zero-sized partition {partition_name}."
                 ));
@@ -1914,7 +1922,9 @@ fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
         }
 
         if !flash_filename.is_empty()
-            && (entry.block_count > 0 || is_growable_zero_partition(&partition_name))
+            && (entry.block_count > 0
+                || is_growable_zero_partition(&partition_name)
+                || is_allowed_zero_sized_payload_mapping(&partition_name, flash_filename))
         {
             flashable_count += 1;
         }
@@ -3633,6 +3643,11 @@ mod tests {
         let candidate = PitData::new(bytes).unwrap();
         validate_pit_layout(&current, "device").unwrap();
         validate_repartition_compatibility(&current, &candidate).unwrap();
+        assert!(is_allowed_zero_sized_payload_mapping(
+            "UL_KEYS",
+            "ul_key.bin"
+        ));
+        assert!(!is_allowed_zero_sized_payload_mapping("BOOT_A", "boot.img"));
         let duplicated_payload_targets = find_pit_entries_by_filename(&current, "dspso.bin");
         assert_eq!(duplicated_payload_targets.len(), 2);
         assert_eq!(
