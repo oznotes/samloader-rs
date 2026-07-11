@@ -5,14 +5,15 @@ use memmap2::{Mmap, MmapOptions};
 use samloader_fus::{DownloadProgress, FusClient, try_fetch_version_xml};
 use samloader_odin::{
     FirmwareFile, FirmwareInfo, FirmwareLz4File, Lz4FrameHeader, OdinManager, UsbBackendOption,
-    create_backend, detect_device, reboot_download, verify_md5_footer,
+    create_backend, detect_device_checked, reboot_download, validate_firmware_plan,
+    verify_md5_footer,
 };
-use samloader_pit::{PitData, PitEntry};
+use samloader_pit::{DeviceType, PitData, PitEntry};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -20,13 +21,53 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use tar::Archive;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[cfg(windows)]
+#[link(name = "Kernel32")]
+unsafe extern "system" {
+    fn MoveFileExW(existing: *const u16, destination: *const u16, flags: u32) -> i32;
+}
+
+#[cfg(windows)]
+fn move_file_no_replace(existing: &Path, destination: &Path) -> std::io::Result<()> {
+    let existing: Vec<u16> = existing
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: Both buffers are live, nul-terminated UTF-16 strings. Zero flags
+    // deliberately omits MOVEFILE_REPLACE_EXISTING.
+    let moved = unsafe { MoveFileExW(existing.as_ptr(), destination.as_ptr(), 0) };
+    if moved == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn move_file_no_replace(existing: &Path, destination: &Path) -> std::io::Result<()> {
+    fs::hard_link(existing, destination)?;
+    if let Err(error) = fs::remove_file(existing) {
+        let _ = fs::remove_file(destination);
+        return Err(error);
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +77,22 @@ struct FolderPackages {
     cp: Option<String>,
     csc: Option<String>,
     userdata: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct PackageIdentity {
+    path: String,
+    canonical_path: String,
+    size: u64,
+    modified_unix_nanos: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FolderScanResult {
+    packages: FolderPackages,
+    identities: Vec<PackageIdentity>,
 }
 
 impl FolderPackages {
@@ -55,6 +112,18 @@ impl FolderPackages {
         if let Some(userdata) = &self.userdata {
             packages.push(userdata.clone());
         }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.bl.is_none()
+            && self.ap.is_none()
+            && self.cp.is_none()
+            && self.csc.is_none()
+            && self.userdata.is_none()
+    }
+
+    fn has_core_set(&self) -> bool {
+        self.bl.is_some() && self.ap.is_some() && self.cp.is_some() && self.csc.is_some()
     }
 }
 
@@ -100,6 +169,18 @@ struct PitEntryView {
     partition: String,
     flash_file: String,
     size: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DevicePitRead {
+    snapshot_id: String,
+    rows: Vec<PitEntryView>,
+}
+
+struct PitSnapshot {
+    id: u64,
+    bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -164,6 +245,8 @@ struct FlashRequest {
     folder: Option<String>,
     csc_mode: String,
     packages: FolderPackages,
+    #[serde(default)]
+    reviewed_packages: Option<Vec<PackageIdentity>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -196,6 +279,9 @@ struct IndexedEntry {
     normalized_name: String,
     mmap: Mmap,
     is_lz4: bool,
+    source_file: Arc<File>,
+    source_offset: u64,
+    source_size: usize,
 }
 
 #[derive(Clone, Default)]
@@ -306,11 +392,60 @@ impl DownloadControl {
 enum ActiveOperation {
     Download(Arc<DownloadControl>),
     Flash,
+    Device(&'static str),
+}
+
+impl ActiveOperation {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Download(_) => "a firmware download",
+            Self::Flash => "a flash operation",
+            Self::Device(label) => label,
+        }
+    }
 }
 
 #[derive(Default)]
 struct GuiState {
     active_operation: Arc<Mutex<Option<ActiveOperation>>>,
+    pit_snapshot: Arc<Mutex<Option<PitSnapshot>>>,
+    next_pit_snapshot: Arc<AtomicU64>,
+}
+
+struct ActiveOperationGuard {
+    active_operation: Arc<Mutex<Option<ActiveOperation>>>,
+}
+
+impl Drop for ActiveOperationGuard {
+    fn drop(&mut self) {
+        let mut active = self
+            .active_operation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *active = None;
+    }
+}
+
+fn reserve_operation(
+    active_operation: &Arc<Mutex<Option<ActiveOperation>>>,
+    operation: ActiveOperation,
+) -> Result<ActiveOperationGuard, String> {
+    let requested = operation.label();
+    let mut active = active_operation
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(current) = active.as_ref() {
+        return Err(format!(
+            "Cannot start {requested} while {} is active.",
+            current.label()
+        ));
+    }
+    *active = Some(operation);
+    drop(active);
+
+    Ok(ActiveOperationGuard {
+        active_operation: Arc::clone(active_operation),
+    })
 }
 
 struct TauriDownloadProgress {
@@ -1044,6 +1179,168 @@ fn is_tar_package_name(name: &str) -> bool {
     name.ends_with(".tar") || name.ends_with(".tar.md5")
 }
 
+fn package_basename(path: &str) -> Result<String, String> {
+    Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| format!("Firmware package path \"{path}\" has no filename."))
+}
+
+fn validate_package_slot(path: &str, slot: &str, prefixes: &[&str]) -> Result<(), String> {
+    let filename = package_basename(path)?;
+    let upper = filename.to_ascii_uppercase();
+    if !prefixes.iter().any(|prefix| upper.starts_with(prefix)) {
+        return Err(format!(
+            "The {slot} slot contains \"{filename}\", which is not a {slot} package."
+        ));
+    }
+    Ok(())
+}
+
+fn package_build_token(path: &str, prefix: &str) -> Option<String> {
+    let filename = package_basename(path).ok()?.to_ascii_uppercase();
+    filename
+        .strip_prefix(prefix)?
+        .split('_')
+        .next()
+        .filter(|token| !token.is_empty())
+        .map(str::to_string)
+}
+
+fn package_model_identity(path: &str) -> Option<String> {
+    let filename = package_basename(path).ok()?.to_ascii_uppercase();
+    filename.split('_').find_map(|token| {
+        let bytes = token.as_bytes();
+        if bytes.len() < 5
+            || !bytes[0].is_ascii_alphabetic()
+            || !bytes[1..4].iter().all(u8::is_ascii_digit)
+            || !bytes[4].is_ascii_alphabetic()
+        {
+            return None;
+        }
+        let length = if bytes.get(5).is_some_and(u8::is_ascii_digit) {
+            6
+        } else {
+            5
+        };
+        Some(token[..length].to_string())
+    })
+}
+
+fn validate_package_selection(
+    packages: &FolderPackages,
+    csc_mode: &str,
+    repartition: bool,
+) -> Result<(), String> {
+    if !matches!(csc_mode, "home" | "wipe") {
+        return Err(format!("Unknown CSC mode: {csc_mode}"));
+    }
+
+    if let Some(path) = &packages.bl {
+        validate_package_slot(path, "BL", &["BL_"])?;
+    }
+    if let Some(path) = &packages.ap {
+        validate_package_slot(path, "AP", &["AP_"])?;
+    }
+    if let Some(path) = &packages.cp {
+        validate_package_slot(path, "CP", &["CP_"])?;
+    }
+    if let Some(path) = &packages.userdata {
+        validate_package_slot(path, "USERDATA", &["USERDATA_"])?;
+    }
+    if let Some(path) = &packages.csc {
+        match csc_mode {
+            "home" => validate_package_slot(path, "HOME_CSC", &["HOME_CSC_"])?,
+            "wipe" => {
+                let filename = package_basename(path)?;
+                let upper = filename.to_ascii_uppercase();
+                if !upper.starts_with("CSC_") || upper.starts_with("HOME_CSC_") {
+                    return Err(format!(
+                        "The CSC slot contains \"{filename}\", which is not a factory-reset CSC package."
+                    ));
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    let mut selected_paths = HashSet::new();
+    for path in [
+        packages.bl.as_deref(),
+        packages.ap.as_deref(),
+        packages.cp.as_deref(),
+        packages.csc.as_deref(),
+        packages.userdata.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let normalized = path.trim().replace('/', "\\").to_ascii_lowercase();
+        if !selected_paths.insert(normalized) {
+            return Err(format!(
+                "Firmware package \"{path}\" was selected in more than one slot."
+            ));
+        }
+    }
+
+    if let (Some(bl), Some(ap)) = (&packages.bl, &packages.ap) {
+        let bl_build = package_build_token(bl, "BL_");
+        let ap_build = package_build_token(ap, "AP_");
+        if let (Some(bl_build), Some(ap_build)) = (bl_build, ap_build)
+            && bl_build != ap_build
+        {
+            return Err(format!(
+                "BL and AP packages belong to different firmware builds ({bl_build} vs {ap_build}). Select packages from one firmware release."
+            ));
+        }
+    }
+
+    let mut package_models: HashMap<String, String> = HashMap::new();
+    for (slot, path) in [
+        ("BL", packages.bl.as_deref()),
+        ("AP", packages.ap.as_deref()),
+        ("CP", packages.cp.as_deref()),
+        ("CSC", packages.csc.as_deref()),
+        ("USERDATA", packages.userdata.as_deref()),
+    ] {
+        if let Some(path) = path
+            && let Some(model) = package_model_identity(path)
+        {
+            package_models.insert(slot.to_string(), model);
+        }
+    }
+    if let Some(expected_model) = package_models.values().next() {
+        let mismatched: Vec<String> = package_models
+            .iter()
+            .filter(|(_, model)| *model != expected_model)
+            .map(|(slot, model)| format!("{slot}={model}"))
+            .collect();
+        if !mismatched.is_empty() {
+            return Err(format!(
+                "Selected packages target different device families (expected {expected_model}; {}). Select every package from one model and release.",
+                mismatched.join(", ")
+            ));
+        }
+    }
+
+    if repartition {
+        if csc_mode != "wipe" {
+            return Err(
+                "Repartition requires factory-reset CSC mode; HOME_CSC cannot be used.".to_string(),
+            );
+        }
+        if !packages.has_core_set() {
+            return Err(
+                "Repartition requires a complete BL, AP, CP, and factory-reset CSC package set."
+                    .to_string(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
 fn path_to_cli_string(path: PathBuf) -> String {
     path.to_string_lossy().to_string()
 }
@@ -1163,6 +1460,54 @@ fn scan_package_folder_impl(folder: &str, csc_mode: &str) -> Result<FolderPackag
     })
 }
 
+fn package_identities(packages: &FolderPackages) -> Result<Vec<PackageIdentity>, String> {
+    let mut paths = Vec::new();
+    packages.append_to(&mut paths);
+    paths
+        .into_iter()
+        .map(|path| {
+            let canonical = fs::canonicalize(&path)
+                .map_err(|error| format!("Failed to resolve firmware package \"{path}\": {error}"))?;
+            let metadata = fs::metadata(&canonical)
+                .map_err(|error| format!("Failed to inspect firmware package \"{path}\": {error}"))?;
+            if !metadata.is_file() || metadata.len() == 0 {
+                return Err(format!(
+                    "Firmware package \"{path}\" is no longer a non-empty file. Scan the folder again."
+                ));
+            }
+            let modified = metadata.modified().map_err(|error| {
+                format!("Failed to read the modification time for firmware package \"{path}\": {error}")
+            })?;
+            let modified = modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| format!("Firmware package \"{path}\" has an invalid modification time."))?;
+            let modified_unix_nanos = (u128::from(modified.as_secs()) * 1_000_000_000
+                + u128::from(modified.subsec_nanos()))
+            .to_string();
+            Ok(PackageIdentity {
+                path,
+                canonical_path: canonical.to_string_lossy().to_string(),
+                size: metadata.len(),
+                modified_unix_nanos,
+            })
+        })
+        .collect()
+}
+
+fn verify_reviewed_folder(
+    selected: &FolderPackages,
+    reviewed: &[PackageIdentity],
+) -> Result<(), String> {
+    let current = package_identities(selected)?;
+    if current != reviewed {
+        return Err(
+            "The firmware folder changed after it was reviewed. Scan the folder again and review the updated package list before flashing."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 fn backend_from_str(backend: &str) -> Result<UsbBackendOption, String> {
     UsbBackendOption::try_from(backend).map_err(|e| e.to_string())
 }
@@ -1220,6 +1565,52 @@ fn normalize_basename(path_str: &str) -> (String, bool) {
     }
 }
 
+fn is_lz4_payload(bytes: &[u8], has_lz4_suffix: bool) -> bool {
+    has_lz4_suffix || bytes.starts_with(&0x184d_2204_u32.to_le_bytes())
+}
+
+fn is_known_package_metadata(path: &str) -> bool {
+    let normalized = path.replace('\\', "/").to_ascii_lowercase();
+    let normalized = normalized.trim_start_matches("./");
+    normalized.starts_with("meta-data/")
+        || normalized.starts_with("meta-inf/")
+        || normalized.starts_with("metadata/")
+}
+
+fn validate_payload_entry(
+    is_file: bool,
+    is_directory: bool,
+    size: u64,
+    path: &str,
+) -> Result<bool, String> {
+    if is_known_package_metadata(path) || is_directory {
+        return Ok(false);
+    }
+    if !is_file {
+        return Err(format!("Archive payload \"{path}\" is not a regular file."));
+    }
+    if size == 0 {
+        return Err(format!("Archive payload \"{path}\" is empty."));
+    }
+    Ok(true)
+}
+
+const MAX_DOWNLOAD_LIST_SIZE: u64 = 1024 * 1024;
+
+fn validate_download_list_entry(is_file: bool, size: u64, package: &str) -> Result<(), String> {
+    if !is_file || size == 0 {
+        return Err(format!(
+            "download-list.txt in \"{package}\" is not a non-empty file."
+        ));
+    }
+    if size > MAX_DOWNLOAD_LIST_SIZE {
+        return Err(format!(
+            "download-list.txt in \"{package}\" is unexpectedly large ({size} bytes)."
+        ));
+    }
+    Ok(())
+}
+
 fn scan_tar_packages(
     packages: &[String],
     skip_md5: bool,
@@ -1274,6 +1665,10 @@ fn scan_tar_packages(
     let mut all_packages_entries: Vec<Vec<IndexedEntry>> = Vec::new();
 
     for (pkg, file) in &opened_packages {
+        let source_file = Arc::new(
+            file.try_clone()
+                .map_err(|error| format!("Failed to retain package file \"{pkg}\": {error}"))?,
+        );
         let mut archive = Archive::new(file);
         let entries = archive
             .entries()
@@ -1284,40 +1679,60 @@ fn scan_tar_packages(
         for entry_res in entries {
             let entry =
                 entry_res.map_err(|e| format!("Corrupted archive entry in \"{pkg}\": {e}"))?;
-            if !entry.header().entry_type().is_file() || entry.size() == 0 {
-                continue;
-            }
-            let entry_path = match entry.path() {
-                Ok(p) => p.to_string_lossy().to_string(),
-                Err(_) => continue,
-            };
+            let entry_type = entry.header().entry_type();
+            let is_file = entry_type.is_file();
+            let entry_path = entry
+                .path()
+                .map_err(|error| format!("Invalid archive entry path in \"{pkg}\": {error}"))?
+                .to_string_lossy()
+                .to_string();
 
             let offset = entry.raw_file_position();
             let size = entry.size();
+            let mapping_size = usize::try_from(size).map_err(|_| {
+                format!(
+                    "Archive entry \"{entry_path}\" in \"{pkg}\" is too large for this platform."
+                )
+            })?;
             let (normalized_name, is_lz4) = normalize_basename(&entry_path);
 
-            if normalized_name == "download-list.txt" {
+            if normalized_name.eq_ignore_ascii_case("download-list.txt") {
+                validate_download_list_entry(is_file, size, pkg)?;
                 let mut reader = entry;
                 let mut content = String::new();
-                if reader.read_to_string(&mut content).is_ok() {
-                    let download_list = content
-                        .lines()
-                        .filter_map(|s| {
-                            let s = s.trim();
-                            if s.is_empty() {
-                                None
-                            } else {
-                                Some(s.to_string())
-                            }
-                        })
-                        .collect();
-                    archives_download_lists.push(download_list);
+                reader.read_to_string(&mut content).map_err(|error| {
+                    format!("Failed to read download-list.txt in \"{pkg}\": {error}")
+                })?;
+                let mut download_list = HashSet::new();
+                for line in content
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                {
+                    let (name, _) = normalize_basename(line);
+                    if name.is_empty() {
+                        return Err(format!(
+                            "download-list.txt in \"{pkg}\" contains an invalid entry: {line:?}."
+                        ));
+                    }
+                    download_list.insert(name.to_ascii_lowercase());
                 }
+                if download_list.is_empty() {
+                    return Err(format!(
+                        "download-list.txt in \"{pkg}\" contains no payload entries."
+                    ));
+                }
+                archives_download_lists.push(download_list);
             } else {
+                if !validate_payload_entry(is_file, entry_type.is_dir(), size, &entry_path)
+                    .map_err(|error| format!("Invalid archive entry in \"{pkg}\": {error}"))?
+                {
+                    continue;
+                }
                 let mmap = unsafe {
                     MmapOptions::new()
                         .offset(offset)
-                        .len(size as usize)
+                        .len(mapping_size)
                         .map(file)
                 }
                 .map_err(|e| {
@@ -1329,6 +1744,9 @@ fn scan_tar_packages(
                     normalized_name,
                     mmap,
                     is_lz4,
+                    source_file: Arc::clone(&source_file),
+                    source_offset: offset,
+                    source_size: mapping_size,
                 });
             }
         }
@@ -1353,10 +1771,16 @@ fn scan_tar_packages(
 
     for package_entries in all_packages_entries {
         for entry in package_entries {
-            if entry.normalized_name.ends_with(".pit") {
+            if entry.normalized_name.to_ascii_lowercase().ends_with(".pit") {
+                if pit_entry.is_some() {
+                    return Err(
+                        "More than one PIT file was found in the selected firmware packages. Select one coherent firmware set."
+                            .to_string(),
+                    );
+                }
                 pit_entry = Some(entry);
             } else if let Some(allowlist) = download_allowlist {
-                if allowlist.contains(&entry.normalized_name) {
+                if allowlist.contains(&entry.normalized_name.to_ascii_lowercase()) {
                     resolved_entries.push(entry);
                 }
             } else {
@@ -1369,11 +1793,313 @@ fn scan_tar_packages(
     Ok((resolved_entries, local_pit_file))
 }
 
-fn find_pit_entry_by_filename<'a>(pit_data: &'a PitData, filename: &str) -> Option<&'a PitEntry> {
-    pit_data.entries.iter().find(|e| {
-        let flash_fn = e.flash_filename.to_string_lossy();
-        flash_fn.eq_ignore_ascii_case(filename)
-    })
+fn find_pit_entries_by_filename<'a>(pit_data: &'a PitData, filename: &str) -> Vec<&'a PitEntry> {
+    pit_data
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry
+                .flash_filename
+                .to_string_lossy()
+                .eq_ignore_ascii_case(filename)
+        })
+        .collect()
+}
+
+fn pit_target_key(entry: &PitEntry) -> (u32, u32, u32) {
+    (
+        entry.binary_type as u32,
+        entry.device_type as u32,
+        entry.identifier,
+    )
+}
+
+type PitLayoutGroup = (u32, u32);
+type PitExtent = (u32, u32, String);
+
+fn pit_layout_group(entry: &PitEntry) -> PitLayoutGroup {
+    match entry.device_type {
+        // Samsung UFS PITs store the logical-unit index in the otherwise
+        // obsolete file_offset field. MMC has one address space.
+        DeviceType::UFS => (entry.device_type as u32, entry.file_offset),
+        DeviceType::MMC => (entry.device_type as u32, 0),
+        _ => (entry.device_type as u32, entry.file_offset),
+    }
+}
+
+fn pit_layout_name_key(entry: &PitEntry) -> (u32, u32, String) {
+    let (device, unit) = pit_layout_group(entry);
+    (
+        device,
+        unit,
+        entry
+            .partition_name
+            .to_string_lossy()
+            .trim()
+            .to_ascii_uppercase(),
+    )
+}
+
+fn is_pit_metadata_partition(name: &str) -> bool {
+    let name = name.to_ascii_uppercase();
+    name == "PIT" || name.starts_with("PGPT") || name.starts_with("SGPT") || name.starts_with("MD5")
+}
+
+fn validate_pit_layout(pit_data: &PitData, label: &str) -> Result<(), String> {
+    if pit_data.entries.is_empty() {
+        return Err(format!("The {label} PIT contains no partition entries."));
+    }
+
+    let mut targets = HashSet::new();
+    let mut names = HashSet::new();
+    let mut extents: HashMap<PitLayoutGroup, Vec<PitExtent>> = HashMap::new();
+    let mut flashable_count = 0_usize;
+    for entry in &pit_data.entries {
+        let partition_name = entry.partition_name.to_string_lossy().trim().to_string();
+        if partition_name.is_empty() {
+            return Err(format!("The {label} PIT contains an unnamed partition."));
+        }
+        if !targets.insert(pit_target_key(entry)) {
+            return Err(format!(
+                "The {label} PIT contains duplicate partition target {}.",
+                partition_name
+            ));
+        }
+        if !names.insert(pit_layout_name_key(entry)) {
+            return Err(format!(
+                "The {label} PIT contains duplicate partition name {partition_name} in one storage unit."
+            ));
+        }
+
+        if entry.device_type == DeviceType::UFS
+            && (pit_data.lu_count == 0 || entry.file_offset >= u32::from(pit_data.lu_count))
+        {
+            return Err(format!(
+                "The {label} PIT assigns partition {partition_name} to invalid UFS logical unit {} (declared units: {}).",
+                entry.file_offset, pit_data.lu_count
+            ));
+        }
+
+        if entry.block_count == 0 {
+            let upper_name = partition_name.to_ascii_uppercase();
+            if !matches!(upper_name.as_str(), "PAD" | "USERDATA") {
+                return Err(format!(
+                    "The {label} PIT gives partition {partition_name} a zero block count."
+                ));
+            }
+        } else if matches!(entry.device_type, DeviceType::MMC | DeviceType::UFS)
+            && !is_pit_metadata_partition(&partition_name)
+        {
+            let end = entry
+                .block_size_or_offset
+                .checked_add(entry.block_count)
+                .ok_or_else(|| {
+                    format!(
+                        "The {label} PIT partition {partition_name} overflows its 32-bit block address space."
+                    )
+                })?;
+            extents.entry(pit_layout_group(entry)).or_default().push((
+                entry.block_size_or_offset,
+                end,
+                partition_name.clone(),
+            ));
+        }
+
+        let filename = entry.flash_filename.to_string_lossy();
+        let filename = filename.trim();
+        if filename.is_empty() {
+            continue;
+        }
+        flashable_count += 1;
+    }
+
+    for ((device, unit), group_extents) in &mut extents {
+        group_extents.sort_by_key(|extent| (extent.0, extent.1));
+        for adjacent in group_extents.windows(2) {
+            let previous = &adjacent[0];
+            let next = &adjacent[1];
+            if next.0 < previous.1 {
+                return Err(format!(
+                    "The {label} PIT overlaps partitions {} and {} in storage type {device}, unit {unit}.",
+                    previous.2, next.2
+                ));
+            }
+        }
+    }
+
+    if flashable_count == 0 {
+        return Err(format!("The {label} PIT contains no flashable partitions."));
+    }
+    Ok(())
+}
+
+fn validate_repartition_compatibility(
+    current: &PitData,
+    candidate: &PitData,
+) -> Result<(), String> {
+    validate_pit_layout(current, "device")?;
+    validate_pit_layout(candidate, "selected")?;
+
+    let current_cpu = current
+        .cpu_bl_id
+        .to_string_lossy()
+        .trim()
+        .to_ascii_uppercase();
+    let candidate_cpu = candidate
+        .cpu_bl_id
+        .to_string_lossy()
+        .trim()
+        .to_ascii_uppercase();
+    if current_cpu.is_empty() || candidate_cpu.is_empty() {
+        return Err(
+            "Repartition was blocked because the device or selected PIT has no hardware identity tag."
+                .to_string(),
+        );
+    }
+    if current_cpu != candidate_cpu {
+        return Err(format!(
+            "The selected PIT targets {candidate_cpu}, but the connected device reports {current_cpu}."
+        ));
+    }
+
+    let current_container = current
+        .com_tar2
+        .to_string_lossy()
+        .trim()
+        .to_ascii_uppercase();
+    let candidate_container = candidate
+        .com_tar2
+        .to_string_lossy()
+        .trim()
+        .to_ascii_uppercase();
+    if !current_container.is_empty()
+        && !candidate_container.is_empty()
+        && current_container != candidate_container
+    {
+        return Err(format!(
+            "The selected PIT container tag ({candidate_container}) does not match the connected device ({current_container})."
+        ));
+    }
+    if current.lu_count != candidate.lu_count {
+        return Err(format!(
+            "The selected PIT uses {} logical units, but the connected device uses {}.",
+            candidate.lu_count, current.lu_count
+        ));
+    }
+
+    let storage_kind = |pit: &PitData| {
+        if pit
+            .entries
+            .iter()
+            .any(|entry| entry.device_type == DeviceType::UFS)
+        {
+            Some(DeviceType::UFS)
+        } else if pit
+            .entries
+            .iter()
+            .any(|entry| entry.device_type == DeviceType::MMC)
+        {
+            Some(DeviceType::MMC)
+        } else {
+            None
+        }
+    };
+    let current_storage = storage_kind(current);
+    let candidate_storage = storage_kind(candidate);
+    if current_storage.is_none() || candidate_storage.is_none() {
+        return Err(
+            "Repartition was blocked because the storage type could not be verified from both PIT files."
+                .to_string(),
+        );
+    }
+    if current_storage != candidate_storage {
+        return Err(
+            "The selected PIT storage type does not match the connected device.".to_string(),
+        );
+    }
+
+    let current_entries: HashMap<(u32, u32, String), &PitEntry> = current
+        .entries
+        .iter()
+        .map(|entry| (pit_layout_name_key(entry), entry))
+        .collect();
+    let mut common_partitions = 0_usize;
+    for entry in &candidate.entries {
+        let key = pit_layout_name_key(entry);
+        let Some(current_entry) = current_entries.get(&key) else {
+            continue;
+        };
+        common_partitions += 1;
+        if pit_target_key(current_entry) != pit_target_key(entry)
+            || current_entry.attributes != entry.attributes
+        {
+            return Err(format!(
+                "The selected PIT changes the hardware target or block attributes of partition {}.",
+                entry.partition_name
+            ));
+        }
+    }
+    let required_common = current.entries.len().saturating_mul(4).div_ceil(5);
+    if common_partitions < required_common {
+        return Err(format!(
+            "The selected PIT shares only {common_partitions} partition names with the connected device; at least {required_common} are required for a safe identity check."
+        ));
+    }
+
+    let allowed_new_entries = current.entries.len().div_ceil(5).max(4);
+    if candidate.entries.len() > current.entries.len().saturating_add(allowed_new_entries) {
+        return Err(format!(
+            "The selected PIT contains too many new partitions ({} selected versus {} on the device).",
+            candidate.entries.len(),
+            current.entries.len()
+        ));
+    }
+
+    let mut current_limits: HashMap<PitLayoutGroup, u32> = HashMap::new();
+    for entry in &current.entries {
+        if !matches!(entry.device_type, DeviceType::MMC | DeviceType::UFS) {
+            continue;
+        }
+        let end = entry
+            .block_size_or_offset
+            .checked_add(entry.block_count)
+            .ok_or_else(|| {
+                "The device PIT contains an overflowing partition extent.".to_string()
+            })?;
+        current_limits
+            .entry(pit_layout_group(entry))
+            .and_modify(|limit| *limit = (*limit).max(end))
+            .or_insert(end);
+    }
+    for entry in &candidate.entries {
+        if !matches!(entry.device_type, DeviceType::MMC | DeviceType::UFS) {
+            continue;
+        }
+        let group = pit_layout_group(entry);
+        let current_limit = current_limits.get(&group).ok_or_else(|| {
+            format!(
+                "The selected PIT introduces an unknown storage unit for partition {}.",
+                entry.partition_name
+            )
+        })?;
+        let candidate_end = entry
+            .block_size_or_offset
+            .checked_add(entry.block_count)
+            .ok_or_else(|| {
+                format!(
+                    "The selected PIT partition {} overflows its block address space.",
+                    entry.partition_name
+                )
+            })?;
+        if candidate_end > *current_limit {
+            return Err(format!(
+                "The selected PIT partition {} extends beyond the connected device's known storage boundary.",
+                entry.partition_name
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn create_firmware_info<'a>(
@@ -1384,7 +2110,7 @@ fn create_firmware_info<'a>(
     skip_size_check: bool,
     file_display_name: &str,
 ) -> Result<FirmwareInfo<'a>, String> {
-    let lz4_frame_header = if is_lz4_suffix {
+    let lz4_frame_header = if is_lz4_payload(&mmap, is_lz4_suffix) {
         let cursor = std::io::Cursor::new(&mmap);
         let header = Lz4FrameHeader::parse(cursor)
             .map_err(|e| format!("Failed to parse LZ4 header for {file_display_name}: {e}"))?;
@@ -1427,19 +2153,85 @@ fn create_firmware_info<'a>(
     })
 }
 
+fn with_odin_session<T, F>(odin_manager: &mut OdinManager, operation: F) -> Result<T, String>
+where
+    F: FnOnce(&mut OdinManager) -> Result<T, String>,
+{
+    odin_manager.begin_session().map_err(|e| e.to_string())?;
+    let operation_result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(odin_manager)));
+    let cleanup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        odin_manager.end_session().map_err(|e| e.to_string())
+    }));
+
+    match operation_result {
+        Err(payload) => {
+            // Preserve the original panic after making the best-effort cleanup
+            // attempt. The outer worker boundary will turn it into a terminal UI
+            // error and release the active-operation guard.
+            std::panic::resume_unwind(payload)
+        }
+        Ok(Err(error)) => {
+            let cleanup_message = match cleanup_result {
+                Ok(Ok(())) => None,
+                Ok(Err(cleanup_error)) => Some(cleanup_error),
+                Err(payload) => Some(format!(
+                    "session cleanup panicked: {}",
+                    panic_message(payload)
+                )),
+            };
+            if let Some(cleanup_error) = cleanup_message {
+                Err(format!(
+                    "{error} The device session also could not be closed cleanly: {cleanup_error}"
+                ))
+            } else {
+                Err(error)
+            }
+        }
+        Ok(Ok(value)) => match cleanup_result {
+            Ok(Ok(())) => Ok(value),
+            Ok(Err(error)) => Err(error),
+            Err(payload) => std::panic::resume_unwind(payload),
+        },
+    }
+}
+
 fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
     let usb_backend = backend_from_str(&req.backend)?;
-    let mut packages = Vec::new();
-
-    if let Some(folder) = &req.folder {
-        let folder_packages = scan_package_folder_impl(folder, &req.csc_mode)?;
-        folder_packages.append_to(&mut packages);
+    let selected_packages = if let Some(folder) = &req.folder {
+        if !req.packages.is_empty() {
+            return Err(
+                "Choose either a firmware folder or individual package slots, not both."
+                    .to_string(),
+            );
+        }
+        let reviewed = req.reviewed_packages.as_deref().ok_or_else(|| {
+            "The firmware folder has not been reviewed. Scan it again before flashing.".to_string()
+        })?;
+        let selected = scan_package_folder_impl(folder, &req.csc_mode)?;
+        verify_reviewed_folder(&selected, reviewed)?;
+        selected
     } else {
-        req.packages.append_to(&mut packages);
-    }
+        if req.reviewed_packages.is_some() {
+            return Err(
+                "Reviewed folder metadata was supplied without a firmware folder.".to_string(),
+            );
+        }
+        req.packages.clone()
+    };
+    validate_package_selection(&selected_packages, &req.csc_mode, req.repartition)?;
+
+    let mut packages = Vec::new();
+    selected_packages.append_to(&mut packages);
 
     if packages.is_empty() {
         return Err("No firmware packages were selected.".to_string());
+    }
+    if !req.repartition && req.pit.is_some() {
+        return Err(
+            "A PIT file may only be selected when the explicit repartition option is enabled."
+                .to_string(),
+        );
     }
 
     let mut pit_file_bytes = None;
@@ -1455,14 +2247,20 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
         pit_file_bytes = Some(buffer);
     }
 
-    let (resolved_entries, local_pit) = scan_tar_packages(&packages, req.skip_md5, &app)?;
+    let (resolved_entries, packaged_pit) = scan_tar_packages(&packages, req.skip_md5, &app)?;
     if resolved_entries.is_empty() {
         return Err(
             "The selected packages do not contain any non-empty flashable files.".to_string(),
         );
     }
+    if pit_file_bytes.is_some() && packaged_pit.is_some() {
+        return Err(
+            "Both an explicit PIT and a packaged PIT were selected. Remove one to avoid an ambiguous repartition target."
+                .to_string(),
+        );
+    }
     if pit_file_bytes.is_none() {
-        pit_file_bytes = local_pit;
+        pit_file_bytes = packaged_pit;
     }
 
     if req.repartition && pit_file_bytes.is_none() {
@@ -1470,13 +2268,17 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
             "Repartition requires a PIT file in the packages or an explicit PIT path.".to_string(),
         );
     }
-    if req.repartition {
-        let Some(pit_bytes) = pit_file_bytes.as_deref() else {
-            return Err("Repartition requires a valid PIT file.".to_string());
-        };
-        PitData::new(pit_bytes)
+    let selected_pit = if req.repartition {
+        let pit_bytes = pit_file_bytes
+            .as_deref()
+            .ok_or_else(|| "Repartition requires a valid PIT file.".to_string())?;
+        let pit = PitData::new(pit_bytes)
             .map_err(|_| "The selected firmware contains an invalid PIT file.".to_string())?;
-    }
+        validate_pit_layout(&pit, "selected")?;
+        Some(pit)
+    } else {
+        None
+    };
 
     emit_flash(
         &app,
@@ -1491,16 +2293,6 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
     odin_manager.init().map_err(|e| e.to_string())?;
     odin_manager.begin_session().map_err(|e| e.to_string())?;
 
-    if req.repartition {
-        emit_flash(&app, "pit", None, 0.0, Some("Uploading PIT".to_string()));
-        let pit_bytes = pit_file_bytes
-            .as_ref()
-            .ok_or_else(|| "Repartition requires a valid PIT file.".to_string())?;
-        odin_manager
-            .send_pit_data(pit_bytes)
-            .map_err(|e| e.to_string())?;
-    }
-
     emit_flash(
         &app,
         "pit",
@@ -1513,43 +2305,108 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let pit_data =
         PitData::new(&pit_buffer).map_err(|_| "Failed to unpack device PIT file.".to_string())?;
+    validate_pit_layout(&pit_data, "device")?;
+
+    if let Some(selected_pit) = selected_pit.as_ref() {
+        validate_repartition_compatibility(&pit_data, selected_pit)?;
+    }
+
+    let mapping_pit = selected_pit.as_ref().unwrap_or(&pit_data);
 
     let mut partition_infos = Vec::new();
+    let mut unmatched_entries = Vec::new();
+    let mut mapped_targets: HashMap<(u32, u32, u32), String> = HashMap::new();
     for entry in resolved_entries {
-        let Some(pit_entry) = find_pit_entry_by_filename(&pit_data, &entry.normalized_name) else {
+        let pit_entries = find_pit_entries_by_filename(mapping_pit, &entry.normalized_name);
+        if pit_entries.is_empty() {
+            unmatched_entries.push(entry.original_name);
             continue;
-        };
-
-        let size = entry.mmap.len() as u64;
-        let info = create_firmware_info(
-            entry.mmap,
-            size,
-            entry.is_lz4,
-            pit_entry,
-            req.skip_size_check,
-            &entry.original_name,
-        )?;
-        partition_infos.push(info);
-    }
-
-    let mut mapped_partition_ids = HashSet::new();
-    let mut unique_partition_infos = Vec::new();
-    for info in partition_infos.into_iter().rev() {
-        let id = match &info {
-            FirmwareInfo::Normal(f) => f.pit_entry.identifier,
-            FirmwareInfo::Lz4(f) => f.pit_entry.identifier,
-        };
-        if mapped_partition_ids.insert(id) {
-            unique_partition_infos.push(info);
+        }
+        let IndexedEntry {
+            original_name,
+            mmap,
+            is_lz4,
+            source_file,
+            source_offset,
+            source_size,
+            ..
+        } = entry;
+        let mut first_mapping = Some(mmap);
+        for pit_entry in pit_entries {
+            let target = pit_target_key(pit_entry);
+            if let Some(previous) = mapped_targets.insert(target, original_name.clone()) {
+                return Err(format!(
+                    "Package entries \"{previous}\" and \"{original_name}\" both target partition {}. Remove the duplicate or select one coherent firmware set.",
+                    pit_entry.partition_name
+                ));
+            }
+            let payload = if let Some(payload) = first_mapping.take() {
+                payload
+            } else {
+                unsafe {
+                    MmapOptions::new()
+                        .offset(source_offset)
+                        .len(source_size)
+                        .map(source_file.as_ref())
+                }
+                .map_err(|error| {
+                    format!(
+                        "Failed to create another mapping for package entry \"{original_name}\": {error}"
+                    )
+                })?
+            };
+            let size = payload.len() as u64;
+            let info = create_firmware_info(
+                payload,
+                size,
+                is_lz4,
+                pit_entry,
+                req.skip_size_check,
+                &original_name,
+            )?;
+            partition_infos.push(info);
         }
     }
-    unique_partition_infos.reverse();
 
-    if unique_partition_infos.is_empty() {
+    if !unmatched_entries.is_empty() {
+        unmatched_entries.sort();
+        return Err(format!(
+            "The following package entries do not exist in the {} PIT: {}. Flashing was stopped before any partition data was written.",
+            if req.repartition {
+                "selected"
+            } else {
+                "device"
+            },
+            unmatched_entries.join(", ")
+        ));
+    }
+
+    if partition_infos.is_empty() {
         return Err("No package entries matched partitions in the device PIT.".to_string());
     }
 
-    let total_bytes: u64 = unique_partition_infos
+    validate_firmware_plan(&partition_infos)?;
+
+    // Upload only after the current device PIT, replacement PIT, package
+    // mappings, duplicate targets, and partition sizes have all passed. From
+    // this point onward the operation intentionally has no cancellation path.
+    if req.repartition {
+        emit_flash(
+            &app,
+            "pit",
+            None,
+            0.0,
+            Some("Uploading validated PIT".to_string()),
+        );
+        let pit_bytes = pit_file_bytes
+            .as_ref()
+            .ok_or_else(|| "Repartition requires a valid PIT file.".to_string())?;
+        odin_manager
+            .send_pit_data(pit_bytes)
+            .map_err(|e| e.to_string())?;
+    }
+
+    let total_bytes: u64 = partition_infos
         .iter()
         .map(|part| match part {
             FirmwareInfo::Normal(f) => f.file.len() as u64,
@@ -1561,7 +2418,7 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let mut overall_done = 0_u64;
-    for info in unique_partition_infos {
+    for info in partition_infos {
         match info {
             FirmwareInfo::Normal(f) => {
                 let name = f.pit_entry.partition_name.to_string();
@@ -1728,7 +2585,12 @@ fn install_completed_download(
         ));
     }
 
-    match fs::rename(part_path, output_path) {
+    let initial_install = if overwrite {
+        fs::rename(part_path, output_path)
+    } else {
+        move_file_no_replace(part_path, output_path)
+    };
+    match initial_install {
         Ok(()) => Ok(()),
         Err(first_error) if path_exists_or_symlink(output_path) && overwrite => {
             let mut backup_path = {
@@ -1779,6 +2641,77 @@ fn install_completed_download(
     }
 }
 
+fn write_atomic_file(output_path: &Path, bytes: &[u8], overwrite: bool) -> Result<(), String> {
+    let parent = output_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    if !parent.is_dir() {
+        return Err(format!(
+            "The destination folder \"{}\" does not exist.",
+            parent.display()
+        ));
+    }
+    if output_path.is_dir() {
+        return Err(format!(
+            "The destination \"{}\" is a folder.",
+            output_path.display()
+        ));
+    }
+    if path_exists_or_symlink(output_path) && !overwrite {
+        return Err(format!(
+            "The destination \"{}\" already exists.",
+            output_path.display()
+        ));
+    }
+
+    let mut temporary = None;
+    for suffix in 0..=1000_u32 {
+        let mut name = output_path.as_os_str().to_os_string();
+        name.push(format!(
+            ".samloader-write-{}-{suffix}.tmp",
+            std::process::id()
+        ));
+        let path = PathBuf::from(name);
+        match File::options().write(true).create_new(true).open(&path) {
+            Ok(file) => {
+                temporary = Some((path, file));
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(format!(
+                    "Failed to reserve a temporary file beside \"{}\": {error}",
+                    output_path.display()
+                ));
+            }
+        }
+    }
+    let (temporary_path, mut file) = temporary.ok_or_else(|| {
+        format!(
+            "Could not reserve a safe temporary filename beside \"{}\".",
+            output_path.display()
+        )
+    })?;
+
+    let write_result = file.write_all(bytes).and_then(|()| file.sync_all());
+    drop(file);
+    if let Err(error) = write_result {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(format!(
+            "Failed to write the temporary PIT snapshot \"{}\": {error}",
+            temporary_path.display()
+        ));
+    }
+
+    let install_result = install_completed_download(&temporary_path, output_path, overwrite)
+        .map_err(|error| format!("Failed to save the PIT snapshot safely: {error}"));
+    if install_result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    install_result
+}
+
 fn run_download(
     app: AppHandle,
     req: DownloadRequest,
@@ -1801,23 +2734,27 @@ fn run_download(
             preflight.size, preflight.available_space
         )));
     }
-    if (preflight.conflict || preflight.part_conflict) && !req.overwrite {
-        let conflict_path = if preflight.conflict {
-            &preflight.path
-        } else {
-            &preflight.part_path
-        };
+    if preflight.part_conflict {
         return Err(DownloadFailure::Failed(format!(
-            "\"{conflict_path}\" already exists. Choose another output name or confirm overwrite."
+            "The temporary file \"{}\" already exists. To avoid deleting another running process's data, confirm no download is using it, remove it manually, and try again.",
+            preflight.part_path
         )));
     }
-    if req.overwrite {
-        remove_partial(&resolved.part_path).map_err(DownloadFailure::Failed)?;
-    } else if path_exists_or_symlink(&resolved.output_path)
-        || path_exists_or_symlink(&resolved.part_path)
-    {
+    if preflight.conflict && !req.overwrite {
+        return Err(DownloadFailure::Failed(format!(
+            "\"{}\" already exists. Choose another output name or confirm replacement.",
+            preflight.path
+        )));
+    }
+    if path_exists_or_symlink(&resolved.part_path) {
         return Err(DownloadFailure::Failed(
-            "The output or temporary file was created during preflight. Choose another name or confirm overwrite."
+            "The temporary download file appeared during preflight. Another process may own it, so samloader left it untouched. Choose another name or retry after it is no longer in use."
+                .to_string()
+        ));
+    }
+    if path_exists_or_symlink(&resolved.output_path) && !req.overwrite {
+        return Err(DownloadFailure::Failed(
+            "The completed output file appeared during preflight. Choose another name or confirm replacement."
                 .to_string(),
         ));
     }
@@ -1865,16 +2802,12 @@ fn run_download(
         .client
         .download(&resolved.part_path, req.threads, &progress)
     {
-        let cleanup_error = remove_partial(&resolved.part_path).err();
         if control.cancelled.load(Ordering::Acquire) {
             return Err(DownloadFailure::Cancelled);
         }
-        let mut message =
-            format!("The firmware download failed. Check your connection and try again: {error}");
-        if let Some(cleanup_error) = cleanup_error {
-            message.push_str(&format!(" {cleanup_error}"));
-        }
-        return Err(DownloadFailure::Failed(message));
+        return Err(DownloadFailure::Failed(format!(
+            "The firmware download failed. Check your connection and try again: {error}"
+        )));
     }
 
     if control.cancelled.load(Ordering::Acquire) {
@@ -1897,6 +2830,7 @@ fn run_download(
 
 fn pit_entries_from_bytes(bytes: &[u8]) -> Result<Vec<PitEntryView>, String> {
     let pit_data = PitData::new(bytes).map_err(|_| "Failed to unpack PIT data.".to_string())?;
+    validate_pit_layout(&pit_data, "device")?;
     Ok(pit_data
         .entries
         .iter()
@@ -1923,8 +2857,14 @@ fn app_info() -> AppInfo {
 }
 
 #[tauri::command]
-fn scan_firmware_folder(folder: String, csc_mode: String) -> Result<FolderPackages, String> {
-    scan_package_folder_impl(&folder, &csc_mode)
+fn scan_firmware_folder(folder: String, csc_mode: String) -> Result<FolderScanResult, String> {
+    let packages = scan_package_folder_impl(&folder, &csc_mode)?;
+    validate_package_selection(&packages, &csc_mode, false)?;
+    let identities = package_identities(&packages)?;
+    Ok(FolderScanResult {
+        packages,
+        identities,
+    })
 }
 
 async fn run_blocking<T, F>(task: F) -> Result<T, String>
@@ -1946,20 +2886,44 @@ where
     }
 }
 
+async fn run_exclusive_blocking<T, F>(
+    state: &GuiState,
+    operation: ActiveOperation,
+    task: F,
+) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    let guard = reserve_operation(&state.active_operation, operation)?;
+    run_blocking(move || {
+        // Moving the guard into the blocking task keeps the exclusion active
+        // even if the async command future is dropped while USB I/O is running.
+        let _guard = guard;
+        task()
+    })
+    .await
+}
+
 #[tauri::command]
 async fn check_updates(model: String, region: String) -> Result<UpdateInfo, String> {
     run_blocking(move || {
         let model = normalize_model(&model)?;
         let region = normalize_region(&region)?;
-        let info = FusClient::new()
-            .map_err(|e| format!("Could not connect to Samsung's firmware service: {e}"))?
-            .try_fetch_history(&model, &region)
-            .or_else(|_| try_fetch_version_xml(&model, &region))
-            .map_err(|e| {
+        let history = match FusClient::new() {
+            Ok(client) => client
+                .try_fetch_history(&model, &region)
+                .map_err(|error| error.to_string()),
+            Err(error) => Err(error.to_string()),
+        };
+        let info = match history {
+            Ok(info) => info,
+            Err(history_error) => try_fetch_version_xml(&model, &region).map_err(|version_error| {
                 format!(
-                    "No firmware history could be found for {model} / {region}. Verify the model and sales CSC: {e}"
+                    "No firmware history could be found for {model} / {region}. Verify the model and sales CSC. History request: {history_error}. Version request: {version_error}"
                 )
-            })?;
+            })?,
+        };
         Ok(UpdateInfo {
             latest: info.latest,
             previous: info.previous,
@@ -1970,8 +2934,13 @@ async fn check_updates(model: String, region: String) -> Result<UpdateInfo, Stri
 }
 
 #[tauri::command]
-async fn detect_android_device() -> Result<AndroidDeviceInfo, String> {
-    run_blocking(move || Ok(detect_android_device_impl())).await
+async fn detect_android_device(state: State<'_, GuiState>) -> Result<AndroidDeviceInfo, String> {
+    run_exclusive_blocking(
+        &state,
+        ActiveOperation::Device("Android device detection"),
+        move || Ok(detect_android_device_impl()),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1980,28 +2949,51 @@ async fn prepare_download(req: DownloadRequest) -> Result<DownloadPreflight, Str
 }
 
 #[tauri::command]
-async fn detect_download_device(backend: String, wait: bool) -> Result<DeviceStatus, String> {
-    run_blocking(move || {
-        let backend = backend_from_str(&backend)?;
-        let connected = detect_device(backend, wait);
-        Ok(DeviceStatus {
-            connected,
-            label: if connected {
-                "Download mode device".to_string()
-            } else {
-                "No download-mode device".to_string()
-            },
-        })
-    })
-    .await
+async fn detect_download_device(
+    state: State<'_, GuiState>,
+    backend: String,
+    wait: bool,
+) -> Result<DeviceStatus, String> {
+    let pit_snapshot = Arc::clone(&state.pit_snapshot);
+    let result = run_exclusive_blocking(
+        &state,
+        ActiveOperation::Device("device detection"),
+        move || {
+            let backend = backend_from_str(&backend)?;
+            let connected = detect_device_checked(backend, wait).map_err(|e| e.to_string())?;
+            Ok(DeviceStatus {
+                connected,
+                label: if connected {
+                    "Download mode device".to_string()
+                } else {
+                    "No download-mode device".to_string()
+                },
+            })
+        },
+    )
+    .await;
+    if !matches!(&result, Ok(status) if status.connected) {
+        *pit_snapshot
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    }
+    result
 }
 
 #[tauri::command]
-async fn reboot_to_download(backend: String) -> Result<(), String> {
-    run_blocking(move || {
-        let backend = backend_from_str(&backend)?;
-        reboot_download(backend).map_err(|e| e.to_string())
-    })
+async fn reboot_to_download(state: State<'_, GuiState>, backend: String) -> Result<(), String> {
+    *state
+        .pit_snapshot
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    run_exclusive_blocking(
+        &state,
+        ActiveOperation::Device("a device reboot"),
+        move || {
+            let backend = backend_from_str(&backend)?;
+            reboot_download(backend).map_err(|e| e.to_string())
+        },
+    )
     .await
 }
 
@@ -2016,45 +3008,72 @@ fn read_pit_file(path: String) -> Result<Vec<PitEntryView>, String> {
 
 #[tauri::command]
 async fn read_device_pit(
+    state: State<'_, GuiState>,
     backend: String,
     wait: bool,
     verbose: bool,
-) -> Result<Vec<PitEntryView>, String> {
-    run_blocking(move || {
-        let backend = backend_from_str(&backend)?;
-        let usb = create_backend(backend, verbose, wait).map_err(|e| e.to_string())?;
-        let mut odin_manager = OdinManager::new(usb, verbose);
-        odin_manager.init().map_err(|e| e.to_string())?;
-        odin_manager.begin_session().map_err(|e| e.to_string())?;
-        let bytes = odin_manager
-            .download_pit_file()
-            .map_err(|e| e.to_string())?;
-        odin_manager.end_session().map_err(|e| e.to_string())?;
-        pit_entries_from_bytes(&bytes)
-    })
+) -> Result<DevicePitRead, String> {
+    let pit_snapshot = Arc::clone(&state.pit_snapshot);
+    let next_pit_snapshot = Arc::clone(&state.next_pit_snapshot);
+    *pit_snapshot
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    run_exclusive_blocking(
+        &state,
+        ActiveOperation::Device("a device PIT read"),
+        move || {
+            let backend = backend_from_str(&backend)?;
+            let usb = create_backend(backend, verbose, wait).map_err(|e| e.to_string())?;
+            let mut odin_manager = OdinManager::new(usb, verbose);
+            odin_manager.init().map_err(|e| e.to_string())?;
+            let bytes = with_odin_session(&mut odin_manager, |manager| {
+                manager.download_pit_file().map_err(|e| e.to_string())
+            })?;
+            let rows = pit_entries_from_bytes(&bytes)?;
+            let id = next_pit_snapshot.fetch_add(1, Ordering::Relaxed) + 1;
+            *pit_snapshot
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(PitSnapshot { id, bytes });
+            Ok(DevicePitRead {
+                snapshot_id: id.to_string(),
+                rows,
+            })
+        },
+    )
     .await
 }
 
 #[tauri::command]
 async fn dump_device_pit(
-    backend: String,
-    wait: bool,
-    verbose: bool,
+    state: State<'_, GuiState>,
+    snapshot_id: String,
     output: String,
 ) -> Result<(), String> {
-    run_blocking(move || {
-        let backend = backend_from_str(&backend)?;
-        let usb = create_backend(backend, verbose, wait).map_err(|e| e.to_string())?;
-        let mut odin_manager = OdinManager::new(usb, verbose);
-        odin_manager.init().map_err(|e| e.to_string())?;
-        odin_manager.begin_session().map_err(|e| e.to_string())?;
-        let bytes = odin_manager
-            .download_pit_file()
-            .map_err(|e| e.to_string())?;
-        odin_manager.end_session().map_err(|e| e.to_string())?;
-        fs::write(&output, bytes).map_err(|e| format!("Failed to write PIT file: {e}"))
-    })
-    .await
+    let expected_id = snapshot_id.parse::<u64>().map_err(|_| {
+        "The PIT snapshot identifier is invalid. Read the device PIT again.".to_string()
+    })?;
+    let bytes = pit_snapshot_bytes(&state.pit_snapshot, expected_id)?;
+    pit_entries_from_bytes(&bytes)?;
+    run_blocking(move || write_atomic_file(Path::new(&output), &bytes, true)).await
+}
+
+fn pit_snapshot_bytes(
+    snapshot: &Mutex<Option<PitSnapshot>>,
+    expected_id: u64,
+) -> Result<Vec<u8>, String> {
+    let snapshot = snapshot
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let snapshot = snapshot.as_ref().ok_or_else(|| {
+        "The PIT snapshot is no longer current. Read the device PIT again before saving it."
+            .to_string()
+    })?;
+    if snapshot.id != expected_id {
+        return Err(
+            "The PIT snapshot changed. Review the current PIT again before saving it.".to_string(),
+        );
+    }
+    Ok(snapshot.bytes.clone())
 }
 
 #[tauri::command]
@@ -2086,27 +3105,16 @@ fn start_download(
     req: DownloadRequest,
 ) -> Result<(), String> {
     let control = Arc::new(DownloadControl::new());
-    let active_operation = Arc::clone(&state.active_operation);
-    {
-        let mut active = active_operation
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(operation) = active.as_ref() {
-            let operation_name = match operation {
-                ActiveOperation::Download(_) => "a firmware download",
-                ActiveOperation::Flash => "a flash operation",
-            };
-            return Err(format!(
-                "Cannot start another download while {operation_name} is active."
-            ));
-        }
-        *active = Some(ActiveOperation::Download(Arc::clone(&control)));
-    }
+    let operation_guard = reserve_operation(
+        &state.active_operation,
+        ActiveOperation::Download(Arc::clone(&control)),
+    )?;
 
-    let worker_active_operation = Arc::clone(&active_operation);
     let spawn_result = thread::Builder::new()
         .name("firmware-download".to_string())
         .spawn(move || {
+            let _operation_guard = operation_guard;
+            log::info!("starting guarded firmware download operation");
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 run_download(app.clone(), req, Arc::clone(&control))
             }));
@@ -2119,32 +3127,35 @@ fn start_download(
                 Ok(Err(DownloadFailure::Failed(error))) => ("error", error),
                 Err(payload) => {
                     let (identity, _, _) = control.snapshot();
-                    if let Some(output_path) = identity.output_path {
-                        let _ = remove_partial(&part_path_for(Path::new(&output_path)));
-                    }
+                    let staging_hint =
+                        identity
+                            .output_path
+                            .map_or_else(String::new, |output_path| {
+                                format!(
+                                    " Review the staging path \"{}\" before retrying.",
+                                    part_path_for(Path::new(&output_path)).display()
+                                )
+                            });
                     (
                         "error",
                         format!(
-                            "An unexpected internal download error occurred: {}",
-                            panic_message(payload)
+                            "An unexpected internal download error occurred: {}{}",
+                            panic_message(payload),
+                            staging_hint
                         ),
                     )
                 }
             };
 
-            {
-                let mut active = worker_active_operation
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                *active = None;
+            match terminal.0 {
+                "done" => log::info!("firmware download and integrity verification completed"),
+                "cancelled" => log::warn!("firmware download was cancelled"),
+                _ => log::error!("firmware download failed: {}", terminal.1),
             }
+
             emit_download(&app, &control, terminal.0, Some(terminal.1));
         });
     if let Err(error) = spawn_result {
-        let mut active = active_operation
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *active = None;
         return Err(format!("Could not start the download worker: {error}"));
     }
     Ok(())
@@ -2163,6 +3174,9 @@ fn pause_download(app: AppHandle, state: State<'_, GuiState>) -> Result<(), Stri
                 return Err(
                     "A flash operation is active; there is no download to pause.".to_string(),
                 );
+            }
+            Some(ActiveOperation::Device(label)) => {
+                return Err(format!("{label} is active; there is no download to pause."));
             }
             None => return Err("There is no active download to pause.".to_string()),
         }
@@ -2193,6 +3207,11 @@ fn resume_download(app: AppHandle, state: State<'_, GuiState>) -> Result<(), Str
                     "A flash operation is active; there is no download to resume.".to_string(),
                 );
             }
+            Some(ActiveOperation::Device(label)) => {
+                return Err(format!(
+                    "{label} is active; there is no download to resume."
+                ));
+            }
             None => return Err("There is no active download to resume.".to_string()),
         }
     };
@@ -2222,6 +3241,11 @@ fn cancel_download(app: AppHandle, state: State<'_, GuiState>) -> Result<(), Str
                     "A flash operation is active; there is no download to cancel.".to_string(),
                 );
             }
+            Some(ActiveOperation::Device(label)) => {
+                return Err(format!(
+                    "{label} is active; there is no download to cancel."
+                ));
+            }
             None => return Err("There is no active download to cancel.".to_string()),
         }
     };
@@ -2243,27 +3267,13 @@ fn start_flash(
     state: State<'_, GuiState>,
     req: FlashRequest,
 ) -> Result<(), String> {
-    let active_operation = Arc::clone(&state.active_operation);
-    {
-        let mut active = active_operation
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(operation) = active.as_ref() {
-            let operation_name = match operation {
-                ActiveOperation::Download(_) => "a firmware download",
-                ActiveOperation::Flash => "another flash operation",
-            };
-            return Err(format!(
-                "Cannot start flashing while {operation_name} is active."
-            ));
-        }
-        *active = Some(ActiveOperation::Flash);
-    }
+    let operation_guard = reserve_operation(&state.active_operation, ActiveOperation::Flash)?;
 
-    let worker_active_operation = Arc::clone(&active_operation);
     let spawn_result = thread::Builder::new()
         .name("firmware-flash".to_string())
         .spawn(move || {
+            let _operation_guard = operation_guard;
+            log::info!("starting guarded firmware flash operation");
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 run_flash(app.clone(), req)
             }));
@@ -2279,19 +3289,13 @@ fn start_flash(
                     0.0,
                 ),
             };
-            {
-                let mut active = worker_active_operation
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                *active = None;
+            match terminal.0 {
+                "done" => log::info!("firmware flash completed successfully"),
+                _ => log::error!("firmware flash failed: {}", terminal.1),
             }
             emit_flash(&app, terminal.0, None, terminal.2, Some(terminal.1));
         });
     if let Err(error) = spawn_result {
-        let mut active = active_operation
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *active = None;
         return Err(format!("Could not start the flash worker: {error}"));
     }
     Ok(())
@@ -2299,8 +3303,43 @@ fn start_flash(
 
 fn main() {
     tauri::Builder::default()
+        // This must be the first plugin so a second process cannot race an
+        // active download file or USB session in the first process.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .manage(GuiState::default())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .max_file_size(1_000_000)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.state::<GuiState>();
+                let active_label = state
+                    .active_operation
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .as_ref()
+                    .map(ActiveOperation::label);
+                if let Some(label) = active_label {
+                    api.prevent_close();
+                    let _ = window.emit(
+                        "close-blocked",
+                        format!(
+                            "The app must remain open while {label} is active. Finish or safely stop the operation first."
+                        ),
+                    );
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             app_info,
             scan_firmware_folder,
@@ -2518,5 +3557,275 @@ mod tests {
         fs::remove_file(output).unwrap();
         fs::remove_file(partial).unwrap();
         fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn no_replace_primitive_preserves_a_racing_destination() {
+        let directory = temp_test_dir("no-replace-primitive");
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("verified.part");
+        let destination = directory.join("firmware.zip");
+        fs::write(&source, b"new firmware").unwrap();
+        fs::write(&destination, b"existing firmware").unwrap();
+
+        assert!(move_file_no_replace(&source, &destination).is_err());
+        assert_eq!(fs::read(&source).unwrap(), b"new firmware");
+        assert_eq!(fs::read(&destination).unwrap(), b"existing firmware");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn coherent_packages() -> FolderPackages {
+        FolderPackages {
+            bl: Some("BL_S931BXXU1AYF1_release.tar.md5".to_string()),
+            ap: Some("AP_S931BXXU1AYF1_release.tar.md5".to_string()),
+            cp: Some("CP_S931BXXU1AYE9_release.tar.md5".to_string()),
+            csc: Some("CSC_OXM_S931BOXM1AYF1_release.tar.md5".to_string()),
+            userdata: None,
+        }
+    }
+
+    #[test]
+    fn validates_package_slots_builds_and_device_family() {
+        let packages = coherent_packages();
+        assert!(validate_package_selection(&packages, "wipe", false).is_ok());
+
+        let mut mixed_build = packages.clone();
+        mixed_build.ap = Some("AP_S931BXXU2ZZZ9_release.tar.md5".to_string());
+        assert!(validate_package_selection(&mixed_build, "wipe", false).is_err());
+
+        let mut mixed_model = packages.clone();
+        mixed_model.cp = Some("CP_S938BXXU1AYE9_release.tar.md5".to_string());
+        assert!(validate_package_selection(&mixed_model, "wipe", false).is_err());
+
+        let mut wrong_slot = packages;
+        wrong_slot.csc = Some("HOME_CSC_OXM_S931BOXM1AYF1_release.tar.md5".to_string());
+        assert!(validate_package_selection(&wrong_slot, "wipe", false).is_err());
+    }
+
+    #[test]
+    fn repartition_requires_complete_factory_reset_package_set() {
+        let packages = coherent_packages();
+        assert!(validate_package_selection(&packages, "wipe", true).is_ok());
+        assert!(validate_package_selection(&packages, "home", true).is_err());
+
+        let mut incomplete = packages;
+        incomplete.cp = None;
+        assert!(validate_package_selection(&incomplete, "wipe", true).is_err());
+    }
+
+    #[test]
+    fn validates_pit_uniqueness_and_repartition_identity() {
+        let bytes = include_bytes!("../../../test-data/Q7MQ_EUR_OPENX.pit");
+        let current = PitData::new(bytes).unwrap();
+        let candidate = PitData::new(bytes).unwrap();
+        validate_pit_layout(&current, "device").unwrap();
+        validate_repartition_compatibility(&current, &candidate).unwrap();
+        let duplicated_payload_targets = find_pit_entries_by_filename(&current, "dspso.bin");
+        assert_eq!(duplicated_payload_targets.len(), 2);
+        assert_eq!(
+            duplicated_payload_targets[0]
+                .partition_name
+                .to_string_lossy(),
+            "DSP_A"
+        );
+        assert_eq!(
+            duplicated_payload_targets[1]
+                .partition_name
+                .to_string_lossy(),
+            "DSP_B"
+        );
+
+        let mut duplicate = PitData::new(bytes).unwrap();
+        let first_key = pit_target_key(&duplicate.entries[0]);
+        let first_binary_type = duplicate.entries[0].binary_type;
+        let first_device_type = duplicate.entries[0].device_type;
+        duplicate.entries[1].binary_type = first_binary_type;
+        duplicate.entries[1].device_type = first_device_type;
+        duplicate.entries[1].identifier = first_key.2;
+        assert!(validate_pit_layout(&duplicate, "selected").is_err());
+
+        let mut incompatible = PitData::new(bytes).unwrap();
+        incompatible.lu_count = incompatible.lu_count.saturating_add(1);
+        assert!(validate_repartition_compatibility(&current, &incompatible).is_err());
+
+        let storage_entry_index = current
+            .entries
+            .iter()
+            .position(|entry| {
+                matches!(entry.device_type, DeviceType::MMC | DeviceType::UFS)
+                    && entry.block_count > 0
+                    && !is_pit_metadata_partition(&entry.partition_name.to_string_lossy())
+            })
+            .unwrap();
+
+        let mut overlap = PitData::new(bytes).unwrap();
+        let first_group = pit_layout_group(&overlap.entries[storage_entry_index]);
+        let overlapping_index = overlap
+            .entries
+            .iter()
+            .enumerate()
+            .find(|(index, entry)| {
+                *index != storage_entry_index
+                    && pit_layout_group(entry) == first_group
+                    && entry.block_count > 0
+                    && !is_pit_metadata_partition(&entry.partition_name.to_string_lossy())
+            })
+            .map(|(index, _)| index)
+            .unwrap();
+        overlap.entries[overlapping_index].block_size_or_offset =
+            overlap.entries[storage_entry_index].block_size_or_offset;
+        assert!(
+            validate_pit_layout(&overlap, "selected")
+                .unwrap_err()
+                .contains("overlaps partitions")
+        );
+
+        let mut overflowing = PitData::new(bytes).unwrap();
+        overflowing.entries[storage_entry_index].block_size_or_offset = u32::MAX;
+        overflowing.entries[storage_entry_index].block_count = 2;
+        assert!(
+            validate_pit_layout(&overflowing, "selected")
+                .unwrap_err()
+                .contains("overflows its 32-bit block address space")
+        );
+
+        let mut zero_sized = PitData::new(bytes).unwrap();
+        zero_sized.entries[storage_entry_index].block_count = 0;
+        assert!(
+            validate_pit_layout(&zero_sized, "selected")
+                .unwrap_err()
+                .contains("zero block count")
+        );
+
+        let mut invalid_unit = PitData::new(bytes).unwrap();
+        invalid_unit.entries[storage_entry_index].file_offset = u32::from(invalid_unit.lu_count);
+        assert!(
+            validate_pit_layout(&invalid_unit, "selected")
+                .unwrap_err()
+                .contains("invalid UFS logical unit")
+        );
+
+        let mut changed_target = PitData::new(bytes).unwrap();
+        changed_target.entries[storage_entry_index].identifier = u32::MAX;
+        assert!(
+            validate_repartition_compatibility(&current, &changed_target)
+                .unwrap_err()
+                .contains("changes the hardware target")
+        );
+
+        let mut sparse = PitData::new(bytes).unwrap();
+        sparse.entries.truncate(8);
+        assert!(validate_repartition_compatibility(&current, &sparse).is_err());
+
+        let current_group_limit = current
+            .entries
+            .iter()
+            .filter(|entry| pit_layout_group(entry) == first_group)
+            .map(|entry| {
+                entry
+                    .block_size_or_offset
+                    .checked_add(entry.block_count)
+                    .unwrap()
+            })
+            .max()
+            .unwrap();
+        let mut beyond_storage = PitData::new(bytes).unwrap();
+        beyond_storage.entries[storage_entry_index].block_size_or_offset = current_group_limit;
+        beyond_storage.entries[storage_entry_index].block_count = 1;
+        assert!(
+            validate_repartition_compatibility(&current, &beyond_storage)
+                .unwrap_err()
+                .contains("known storage boundary")
+        );
+    }
+
+    #[test]
+    fn active_operation_guard_excludes_and_releases_operations() {
+        let active = Arc::new(Mutex::new(None));
+        let guard = reserve_operation(&active, ActiveOperation::Device("a PIT read")).unwrap();
+        assert!(reserve_operation(&active, ActiveOperation::Flash).is_err());
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _guard = guard;
+            panic!("simulated device worker panic");
+        }));
+        assert!(unwind.is_err());
+
+        let next_guard = reserve_operation(&active, ActiveOperation::Flash).unwrap();
+        drop(next_guard);
+        assert!(
+            active
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn empty_or_non_file_download_lists_fail_closed() {
+        assert!(validate_download_list_entry(true, 0, "firmware.tar").is_err());
+        assert!(validate_download_list_entry(false, 10, "firmware.tar").is_err());
+        assert!(validate_download_list_entry(true, 10, "firmware.tar").is_ok());
+    }
+
+    #[test]
+    fn reviewed_folder_rejects_mutated_or_added_packages() {
+        let directory = temp_test_dir("folder-review");
+        fs::create_dir_all(&directory).unwrap();
+        let first = directory.join("BL_S931BXXU1TEST.tar");
+        fs::write(&first, b"reviewed").unwrap();
+
+        let folder = directory.to_string_lossy();
+        let packages = scan_package_folder_impl(&folder, "home").unwrap();
+        let reviewed = package_identities(&packages).unwrap();
+        verify_reviewed_folder(&packages, &reviewed).unwrap();
+
+        fs::write(&first, b"changed package bytes").unwrap();
+        let rescanned = scan_package_folder_impl(&folder, "home").unwrap();
+        assert!(verify_reviewed_folder(&rescanned, &reviewed).is_err());
+
+        fs::write(directory.join("BL_S931BXXU1OTHER.tar"), b"other").unwrap();
+        assert!(scan_package_folder_impl(&folder, "home").is_err());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn pit_dump_uses_the_exact_reviewed_snapshot_and_writes_atomically() {
+        let reviewed = include_bytes!("../../../test-data/Q7MQ_EUR_OPENX.pit").to_vec();
+        let replacement_device_bytes = b"a different device PIT".to_vec();
+        let snapshot = Mutex::new(Some(PitSnapshot {
+            id: 7,
+            bytes: reviewed.clone(),
+        }));
+
+        let bytes = pit_snapshot_bytes(&snapshot, 7).unwrap();
+        assert_eq!(bytes, reviewed);
+        assert_ne!(bytes, replacement_device_bytes);
+        assert!(pit_snapshot_bytes(&snapshot, 8).is_err());
+        assert!(pit_entries_from_bytes(&replacement_device_bytes).is_err());
+
+        let directory = temp_test_dir("pit-snapshot");
+        fs::create_dir_all(&directory).unwrap();
+        let output = directory.join("backup.pit");
+        fs::write(&output, b"existing backup").unwrap();
+        assert!(write_atomic_file(&output, &bytes, false).is_err());
+        assert_eq!(fs::read(&output).unwrap(), b"existing backup");
+        write_atomic_file(&output, &bytes, true).unwrap();
+        assert_eq!(fs::read(&output).unwrap(), reviewed);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn empty_and_non_regular_payload_entries_fail_closed() {
+        assert!(validate_payload_entry(true, false, 0, "boot.img").is_err());
+        assert!(validate_payload_entry(false, false, 1, "boot.img").is_err());
+        assert!(!validate_payload_entry(false, true, 0, "images").unwrap());
+        assert!(!validate_payload_entry(true, false, 0, "meta-data/empty.bin").unwrap());
+    }
+
+    #[test]
+    fn lz4_magic_is_detected_even_without_a_filename_suffix() {
+        assert!(is_lz4_payload(&0x184d_2204_u32.to_le_bytes(), false));
+        assert!(is_lz4_payload(b"raw", true));
+        assert!(!is_lz4_payload(b"raw", false));
     }
 }
