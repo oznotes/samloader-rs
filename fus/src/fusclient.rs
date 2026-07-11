@@ -12,14 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Error, Result, auth, xml};
+use crate::{Error, Result, auth, http, xml};
 use aes::cipher::KeyInit;
 use reqwest::StatusCode;
 use reqwest::blocking::{Client, Response};
-use reqwest::header::{AUTHORIZATION, CONTENT_RANGE, HeaderMap, HeaderValue, RANGE, USER_AGENT};
+use reqwest::header::{AUTHORIZATION, CONTENT_RANGE, RANGE, USER_AGENT};
 use std::sync::Mutex;
 use std::time::Duration;
 use xml::{BinaryInform, VersionInfo};
+
+const FUS_API_BASE: &str = "https://neofussvr.sslcs.cdngc.net";
+const FUS_DOWNLOAD_ENDPOINT: &str =
+    "https://cloud-neofussvr.samsungmobile.com/NF_SmartDownloadBinaryForMass.do";
 
 /// Block decryption cipher alias using AES-128 in ECB mode for FUS stream processing.
 pub type Aes128EcbDec = ecb::Decryptor<aes::Aes128>;
@@ -39,6 +43,8 @@ struct AuthState {
 /// with the Samsung Firmware Update Server (FUS).
 pub struct FusClient {
     client: Client,
+    api_base: String,
+    download_endpoint: String,
     auth_state: Mutex<AuthState>,
     /// Reauthentication generation counter. It also serves as the lock that
     /// serializes reauth: a token expiry observed by many download threads at
@@ -51,28 +57,51 @@ pub struct FusClient {
 impl FusClient {
     /// Creates a new `FusClient` and initiates the standard FUS handshake to generate a session nonce.
     pub fn new() -> reqwest::Result<Self> {
-        let client = Client::builder()
+        let client = http::client_builder()
             .cookie_store(true)
-            // For the blocking client, `timeout` is applied per I/O operation with
-            // a fresh deadline each call (see its `Read` impl) — so it flags a
-            // stalled transfer (no data for 30s) without capping total download
-            // time. This is the timeout that surfaces as `Decode/TimedOut`; the
-            // download loop now resumes on it instead of aborting. 30s is also the
-            // library default, made explicit here so it can be tuned.
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(15))
+            // Reqwest's blocking client applies `timeout` to request setup and
+            // afresh to every response-body `Read`. It therefore detects 10s
+            // stalls without imposing a whole-download deadline. (The async
+            // ClientBuilder's same-named method has different total-deadline
+            // semantics and is intentionally not the builder used here.)
+            .timeout(Duration::from_secs(10))
+            .connect_timeout(Duration::from_secs(10))
             .build()?;
         let fus = FusClient {
             client,
+            api_base: FUS_API_BASE.to_string(),
+            download_endpoint: FUS_DOWNLOAD_ENDPOINT.to_string(),
             auth_state: Mutex::new(AuthState::default()),
             reauth_gen: Mutex::new(0),
             info: Default::default(),
         };
 
         // Initialize nonce
-        fus.make_req("NF_SmartDownloadGenerateNonce.do", fus.make_headers(), "")?;
+        fus.make_req(
+            "NF_SmartDownloadGenerateNonce.do",
+            fus.make_authorization_value(),
+            "",
+        )?;
 
         Ok(fus)
+    }
+
+    /// Constructs a handshake-free client pointed at a local HTTP fixture.
+    #[cfg(test)]
+    pub(crate) fn new_for_download_test(
+        download_endpoint: String,
+        info: BinaryInform,
+    ) -> reqwest::Result<Self> {
+        Ok(Self {
+            client: http::client_builder()
+                .timeout(Duration::from_secs(2))
+                .build()?,
+            api_base: download_endpoint.clone(),
+            download_endpoint,
+            auth_state: Mutex::new(AuthState::default()),
+            reauth_gen: Mutex::new(0),
+            info,
+        })
     }
 
     /// Queries the server for firmware binary metadata matching the requested model, region, and version.
@@ -94,13 +123,13 @@ impl FusClient {
             parts.push(parts[0]);
         }
         let fw = parts.join("/");
-        let nonce = self.auth_state.lock().unwrap().nonce.clone();
+        let nonce = lock_unpoisoned(&self.auth_state).nonce.clone();
         let req_xml = xml::binary_inform_req_xml(model, region, &fw, &nonce);
 
         let xml = self
             .make_req(
                 "NF_SmartDownloadBinaryInform.do",
-                self.make_headers(),
+                self.make_authorization_value(),
                 &req_xml,
             )
             .and_then(Response::text)?;
@@ -109,41 +138,35 @@ impl FusClient {
         Ok(())
     }
 
-    fn make_headers(&self) -> HeaderMap {
+    fn make_authorization_value(&self) -> String {
         let (encnonce, auth) = {
-            let state = self.auth_state.lock().unwrap();
+            let state = lock_unpoisoned(&self.auth_state);
             (state.encnonce.clone(), state.auth.clone())
         };
-        let auth_val = format!(
+        format!(
             "FUS nonce=\"{}\", signature=\"{}\", nc=\"\", type=\"\", realm=\"\", newauth=\"1\"",
             encnonce, auth
-        );
-
-        let mut headers = HeaderMap::new();
-        headers.insert(AUTHORIZATION, HeaderValue::from_str(&auth_val).unwrap());
-        headers.insert(USER_AGENT, HeaderValue::from_static("SMART 2.0"));
-        headers
+        )
     }
 
-    fn make_history_headers(&self, model: &str) -> HeaderMap {
+    fn make_history_authorization_value(&self, model: &str) -> String {
         let (client_nonce, signature) = auth::compute_history_headers(model);
-        let auth_val = format!(
+        format!(
             "FUS nonce=\"{}\", signature=\"{}\", nc=\"00000001\", type=\"auth\", realm=\"interface\"",
             client_nonce, signature
-        );
-
-        let mut headers = HeaderMap::new();
-        headers.insert(AUTHORIZATION, HeaderValue::from_str(&auth_val).unwrap());
-        headers.insert(USER_AGENT, HeaderValue::from_static("SMART 2.0"));
-        headers
+        )
     }
 
-    fn make_req(&self, path: &str, headers: HeaderMap, data: &str) -> reqwest::Result<Response> {
-        let url = format!("https://neofussvr.sslcs.cdngc.net/{}", path);
+    fn make_req(&self, path: &str, authorization: String, data: &str) -> reqwest::Result<Response> {
+        let url = format!("{}/{}", self.api_base.trim_end_matches('/'), path);
         let resp = self
             .client
             .post(&url)
-            .headers(headers)
+            // Passing the server-derived nonce through RequestBuilder keeps
+            // invalid header bytes as a typed reqwest builder error instead of
+            // panicking during HeaderValue construction.
+            .header(AUTHORIZATION, authorization)
+            .header(USER_AGENT, "SMART 2.0")
             .body(data.to_string())
             .send()?
             .error_for_status()?;
@@ -156,7 +179,7 @@ impl FusClient {
         {
             let nonce_str = nonce.to_string();
             if !nonce_str.is_empty() {
-                let mut state = self.auth_state.lock().unwrap();
+                let mut state = lock_unpoisoned(&self.auth_state);
                 if nonce_str != state.encnonce {
                     state.encnonce = nonce_str;
                     state.nonce = state.encnonce.clone();
@@ -185,7 +208,7 @@ impl FusClient {
         let req_xml = xml::history_req_xml(model, region);
         let resp = self.make_req(
             "SmartHistory.do",
-            self.make_history_headers(model),
+            self.make_history_authorization_value(model),
             &req_xml,
         )?;
         resp.text()
@@ -193,7 +216,7 @@ impl FusClient {
 
     /// Requests a download authorization ticket from FUS for the currently selected firmware file.
     pub fn init_download(&self) -> reqwest::Result<()> {
-        let nonce = self.auth_state.lock().unwrap().nonce.clone();
+        let nonce = lock_unpoisoned(&self.auth_state).nonce.clone();
         let init_xml = xml::binary_init_req_xml(
             &self.info.filename,
             &nonce,
@@ -203,7 +226,7 @@ impl FusClient {
         );
         self.make_req(
             "NF_SmartDownloadBinaryInitForMass.do",
-            self.make_headers(),
+            self.make_authorization_value(),
             &init_xml,
         )?;
         Ok(())
@@ -211,21 +234,30 @@ impl FusClient {
 
     /// Fetches a specific byte range or chunk of the firmware binary package, automatically handling re-authentication as needed.
     pub fn download_file(&self, start: Option<u64>, end: Option<u64>) -> reqwest::Result<Response> {
+        self.download_response_with_reauth(start, end)?
+            .error_for_status()
+    }
+
+    fn download_response_with_reauth(
+        &self,
+        start: Option<u64>,
+        end: Option<u64>,
+    ) -> reqwest::Result<Response> {
         // Capture the token generation backing this request. If the request is
         // rejected as unauthorized, this lets the refresh tell whether another
         // thread has already rotated the token in the meantime.
-        let gen_used = *self.reauth_gen.lock().unwrap();
+        let gen_used = *lock_unpoisoned(&self.reauth_gen);
 
-        match self.download_file_once(start, end) {
-            Err(e) if e.status() == Some(reqwest::StatusCode::UNAUTHORIZED) => {
-                // The download token expired mid-transfer. Refresh it (at most
-                // once per expiry across all threads) and retry the request once
-                // with the new token. If it still fails, the caller's retry loop
-                // takes over.
-                self.reauthenticate(gen_used);
-                self.download_file_once(start, end)
-            }
-            other => other,
+        let response = self.download_file_once(start, end)?;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            // The download token expired mid-transfer. Refresh it (at most
+            // once per expiry across all threads) and retry the request once
+            // with the new token. If it still fails, the caller's retry loop
+            // takes over.
+            self.reauthenticate(gen_used)?;
+            self.download_file_once(start, end)
+        } else {
+            Ok(response)
         }
     }
 
@@ -238,7 +270,10 @@ impl FusClient {
     /// accepted only for a `0..EOF` request whose content length matches the
     /// firmware metadata.
     pub fn download_file_checked(&self, start: Option<u64>, end: Option<u64>) -> Result<Response> {
-        let response = self.download_file(start, end)?;
+        let response = self.download_response_with_reauth(start, end)?;
+        if !response.status().is_success() {
+            return Err(http_status_error(response.status(), start, end));
+        }
         validate_download_response(&response, start, end, self.info.size)?;
         Ok(response)
     }
@@ -248,32 +283,20 @@ impl FusClient {
         start: Option<u64>,
         end: Option<u64>,
     ) -> reqwest::Result<Response> {
-        let mut headers = self.make_headers();
-        match (start, end) {
-            (Some(s), Some(e)) => headers.insert(
-                RANGE,
-                HeaderValue::from_str(&format!("bytes={}-{}", s, e)).unwrap(),
-            ),
-            (None, Some(e)) => headers.insert(
-                RANGE,
-                HeaderValue::from_str(&format!("bytes=0-{}", e)).unwrap(),
-            ),
-            (Some(s), None) => headers.insert(
-                RANGE,
-                HeaderValue::from_str(&format!("bytes={}-", s)).unwrap(),
-            ),
-            _ => None,
+        let requested_file = format!("{}{}", self.info.path, self.info.filename);
+        let mut request = self
+            .client
+            .get(&self.download_endpoint)
+            .query(&[("file", requested_file)])
+            .header(AUTHORIZATION, self.make_authorization_value())
+            .header(USER_AGENT, "SMART 2.0");
+        request = match (start, end) {
+            (Some(s), Some(e)) => request.header(RANGE, format!("bytes={s}-{e}")),
+            (None, Some(e)) => request.header(RANGE, format!("bytes=0-{e}")),
+            (Some(s), None) => request.header(RANGE, format!("bytes={s}-")),
+            _ => request,
         };
-
-        let url = format!(
-            "http://cloud-neofussvr.samsungmobile.com/NF_SmartDownloadBinaryForMass.do?file={}{}",
-            self.info.path, self.info.filename
-        );
-        self.client
-            .get(url)
-            .headers(headers)
-            .send()?
-            .error_for_status()
+        request.send()
     }
 
     /// Re-establish the session after the auth token expired (HTTP 401),
@@ -286,23 +309,79 @@ impl FusClient {
     /// lock with the same `gen_seen` — simply return and retry with the token
     /// that is now fresh. The new generation is published only on full success,
     /// so a failed refresh leaves the counter untouched and is retried.
-    fn reauthenticate(&self, gen_seen: u64) {
-        let mut generation = self.reauth_gen.lock().unwrap();
+    fn reauthenticate(&self, gen_seen: u64) -> reqwest::Result<()> {
+        let mut generation = lock_unpoisoned(&self.reauth_gen);
         if *generation != gen_seen {
-            return;
+            return Ok(());
         }
-        if self
-            .make_req("NF_SmartDownloadGenerateNonce.do", self.make_headers(), "")
-            .is_ok()
-            && self.init_download().is_ok()
-        {
-            *generation += 1;
-        }
+        self.make_req(
+            "NF_SmartDownloadGenerateNonce.do",
+            self.make_authorization_value(),
+            "",
+        )?;
+        self.init_download()?;
+        *generation += 1;
+        Ok(())
     }
 
-    /// Instantiates and returns an AES-128-ECB decryptor initialized with the unique session decryption key.
+    /// Instantiates a decryptor after validating the session key length.
+    pub fn try_get_decryptor(&self) -> Result<Aes128EcbDec> {
+        Aes128EcbDec::new_from_slice(self.info.key.as_slice()).map_err(|_| Error::InvalidResponse {
+            message: format!(
+                "firmware metadata contained an invalid {}-byte decryption key",
+                self.info.key.len()
+            ),
+        })
+    }
+
+    /// Instantiates an AES-128-ECB decryptor for the session.
+    ///
+    /// Invalid mutable metadata is mapped to an all-zero fallback key rather
+    /// than panicking. New code should use [`FusClient::try_get_decryptor`] so
+    /// it can report the invalid key directly; [`FusClient::download`] already
+    /// does so.
+    #[deprecated(note = "use try_get_decryptor to report invalid session metadata")]
     pub fn get_decryptor(&self) -> Aes128EcbDec {
-        Aes128EcbDec::new_from_slice(self.info.key.as_slice()).unwrap()
+        match self.try_get_decryptor() {
+            Ok(decryptor) => decryptor,
+            Err(_) => {
+                let key: aes::cipher::Key<Aes128EcbDec> = Default::default();
+                Aes128EcbDec::new(&key)
+            }
+        }
+    }
+}
+
+fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn http_status_error(status: StatusCode, start: Option<u64>, end: Option<u64>) -> Error {
+    let retryable = matches!(
+        status,
+        StatusCode::REQUEST_TIMEOUT
+            | StatusCode::TOO_EARLY
+            | StatusCode::TOO_MANY_REQUESTS
+            | StatusCode::INTERNAL_SERVER_ERROR
+            | StatusCode::BAD_GATEWAY
+            | StatusCode::SERVICE_UNAVAILABLE
+            | StatusCode::GATEWAY_TIMEOUT
+    );
+    let range = match (start, end) {
+        (Some(start), Some(end)) => format!("bytes {start}-{end}"),
+        (Some(start), None) => format!("bytes {start}-EOF"),
+        (None, Some(end)) => format!("bytes 0-{end}"),
+        (None, None) => "the full file".to_string(),
+    };
+    Error::HttpStatus {
+        status: status.as_u16(),
+        retryable,
+        message: format!(
+            "{} while requesting {range}",
+            status.canonical_reason().unwrap_or("unknown status")
+        ),
     }
 }
 
@@ -437,6 +516,65 @@ fn invalid_download_response(message: impl Into<String>) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn production_binary_endpoint_uses_https() {
+        assert!(FUS_DOWNLOAD_ENDPOINT.starts_with("https://"));
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn public_decryptor_api_does_not_panic_on_mutated_key() {
+        let info = BinaryInform {
+            key: vec![1, 2, 3],
+            ..Default::default()
+        };
+        let client =
+            FusClient::new_for_download_test("http://127.0.0.1:1/unreachable".to_string(), info)
+                .unwrap();
+
+        assert!(client.try_get_decryptor().is_err());
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = client.get_decryptor();
+            }))
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn server_nonce_with_invalid_header_bytes_returns_builder_error() {
+        let client = FusClient::new_for_download_test(
+            "http://127.0.0.1:1/unreachable".to_string(),
+            BinaryInform::default(),
+        )
+        .unwrap();
+        lock_unpoisoned(&client.auth_state).encnonce = "invalid\r\nnonce".to_string();
+
+        let error = client.download_file_once(None, None).unwrap_err();
+
+        assert!(error.is_builder());
+    }
+
+    #[test]
+    fn http_status_classification_separates_transient_and_permanent_failures() {
+        assert!(matches!(
+            http_status_error(StatusCode::SERVICE_UNAVAILABLE, Some(0), Some(15)),
+            Error::HttpStatus {
+                status: 503,
+                retryable: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            http_status_error(StatusCode::NOT_FOUND, Some(0), Some(15)),
+            Error::HttpStatus {
+                status: 404,
+                retryable: false,
+                ..
+            }
+        ));
+    }
 
     #[test]
     fn binary_info_parser_reports_invalid_response() {

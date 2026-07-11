@@ -86,6 +86,14 @@ pub trait UsbBackend: Sized + UsbTransfer {
     }
 }
 
+fn select_unique_device<T>(mut devices: Vec<T>) -> Result<Option<T>, OdinError> {
+    match devices.len() {
+        0 => Ok(None),
+        1 => Ok(devices.pop()),
+        count => Err(OdinError::MultipleDevices(count)),
+    }
+}
+
 #[cfg(feature = "rusb")]
 pub use rusb::RusbBackend;
 
@@ -104,10 +112,10 @@ pub use nusb::NusbBackend;
 #[cfg(feature = "nusb")]
 mod nusb;
 
-#[cfg(any(feature = "mock", debug_assertions))]
+#[cfg(any(feature = "mock", debug_assertions, test))]
 pub use mock::MockBackend;
 
-#[cfg(any(feature = "mock", debug_assertions))]
+#[cfg(any(feature = "mock", debug_assertions, test))]
 mod mock;
 
 /// Supported USB backend options.
@@ -123,7 +131,7 @@ pub enum UsbBackendOption {
     #[cfg(feature = "nusb")]
     Nusb,
     /// Mock backend.
-    #[cfg(any(feature = "mock", debug_assertions))]
+    #[cfg(any(feature = "mock", debug_assertions, test))]
     Mock,
 }
 
@@ -138,7 +146,7 @@ impl TryFrom<&str> for UsbBackendOption {
             "vcom" => Ok(UsbBackendOption::Vcom),
             #[cfg(feature = "nusb")]
             "nusb" => Ok(UsbBackendOption::Nusb),
-            #[cfg(any(feature = "mock", debug_assertions))]
+            #[cfg(any(feature = "mock", debug_assertions, test))]
             "mock" => Ok(UsbBackendOption::Mock),
             _ => Err(OdinError::ParseError(format!("Unknown USB backend: {s}"))),
         }
@@ -163,7 +171,7 @@ impl UsbBackendOption {
             UsbBackendOption::Vcom => "vcom",
             #[cfg(feature = "nusb")]
             UsbBackendOption::Nusb => "nusb",
-            #[cfg(any(feature = "mock", debug_assertions))]
+            #[cfg(any(feature = "mock", debug_assertions, test))]
             UsbBackendOption::Mock => "mock",
         }
     }
@@ -200,7 +208,7 @@ pub fn create_backend(
             let backend = RusbBackend::new(device, verbose)?;
             Ok(Box::new(backend))
         }
-        #[cfg(any(feature = "mock", debug_assertions))]
+        #[cfg(any(feature = "mock", debug_assertions, test))]
         UsbBackendOption::Mock => {
             let backend = MockBackend::new(verbose);
             Ok(Box::new(backend))
@@ -208,16 +216,50 @@ pub fn create_backend(
     }
 }
 
-/// Helper function to detect a compatible download-mode device on a given backend.
-pub fn detect_device(usb_backend: UsbBackendOption, wait: bool) -> bool {
-    match usb_backend {
+/// Detects exactly one compatible download-mode device on a given backend.
+///
+/// A missing device is reported as `Ok(false)`, while backend errors and
+/// ambiguous multi-device matches are returned to the caller.
+pub fn detect_device_checked(usb_backend: UsbBackendOption, wait: bool) -> Result<bool, OdinError> {
+    let result = match usb_backend {
         #[cfg(feature = "serialport")]
-        UsbBackendOption::Vcom => SerialBackend::find_download_device(wait).is_ok(),
+        UsbBackendOption::Vcom => SerialBackend::find_download_device(wait).map(|_| true),
         #[cfg(feature = "nusb")]
-        UsbBackendOption::Nusb => NusbBackend::find_download_device(wait).is_ok(),
+        UsbBackendOption::Nusb => NusbBackend::find_download_device(wait).map(|_| true),
         #[cfg(feature = "rusb")]
-        UsbBackendOption::Libusb => RusbBackend::find_download_device(wait).is_ok(),
-        #[cfg(any(feature = "mock", debug_assertions))]
-        UsbBackendOption::Mock => true,
+        UsbBackendOption::Libusb => RusbBackend::find_download_device(wait).map(|_| true),
+        #[cfg(any(feature = "mock", debug_assertions, test))]
+        UsbBackendOption::Mock => return Ok(true),
+    };
+
+    match result {
+        Ok(connected) => Ok(connected),
+        Err(OdinError::DeviceNotFound) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+/// Helper function to detect a compatible download-mode device on a given backend.
+///
+/// This compatibility wrapper returns `false` for both missing and ambiguous
+/// devices. New callers that need an actionable error should use
+/// [`detect_device_checked`].
+pub fn detect_device(usb_backend: UsbBackendOption, wait: bool) -> bool {
+    detect_device_checked(usb_backend, wait).unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_unique_device;
+    use crate::OdinError;
+
+    #[test]
+    fn unique_device_selection_fails_closed_on_ambiguity() {
+        assert_eq!(select_unique_device::<u8>(vec![]).unwrap(), None);
+        assert_eq!(select_unique_device(vec![7_u8]).unwrap(), Some(7));
+        assert!(matches!(
+            select_unique_device(vec![1_u8, 2_u8]),
+            Err(OdinError::MultipleDevices(2))
+        ));
     }
 }

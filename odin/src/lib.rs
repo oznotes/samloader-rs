@@ -24,10 +24,13 @@ mod usb;
 
 pub use error::OdinError;
 pub use firmware::{
-    FirmwareFile, FirmwareInfo, FirmwareLz4File, Lz4FrameHeader, verify_md5_footer,
+    FirmwareFile, FirmwareInfo, FirmwareLz4File, Lz4FrameHeader, validate_firmware_plan,
+    validate_lz4_frame, verify_md5_footer,
 };
 pub use odin::{OdinManager, reboot_download};
-pub use usb::{UsbBackend, UsbBackendOption, UsbTransfer, create_backend, detect_device};
+pub use usb::{
+    UsbBackend, UsbBackendOption, UsbTransfer, create_backend, detect_device, detect_device_checked,
+};
 
 #[cfg(feature = "nusb")]
 pub use usb::NusbBackend;

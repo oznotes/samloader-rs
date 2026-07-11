@@ -9,13 +9,14 @@ description = "Samsung Firmware-Update-Server (FUS) client"
 keywords = ["samsung", "firmware"]
 
 [dependencies]
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["query"] }
 aes = { workspace = true }
 ecb = { workspace = true }
 fast-md5 = { workspace = true }
 roxmltree = { workspace = true }
 memmap2 = { workspace = true }
 thiserror = { workspace = true }
+zip = { version = "7.2.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 reqwest = { workspace = true, features = ["native-tls"] }

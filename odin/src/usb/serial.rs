@@ -66,18 +66,24 @@ impl UsbBackend for SerialBackend {
         let mut print_wait = false;
         loop {
             if let Ok(ports) = serialport::available_ports() {
+                let mut matching_ports = Vec::new();
                 for port in ports {
                     if let serialport::SerialPortType::UsbPort(ref info) = port.port_type
                         && predicate(info.vid, info.pid)
                     {
-                        return Ok(port);
+                        matching_ports.push(port);
                     }
+                }
+                if let Some(device) = select_unique_device(matching_ports)? {
+                    return Ok(device);
                 }
             }
 
-            if wait && !print_wait {
-                println!("Waiting for device...");
-                print_wait = true;
+            if wait {
+                if !print_wait {
+                    println!("Waiting for device...");
+                    print_wait = true;
+                }
                 std::thread::sleep(Duration::from_secs(1));
             } else {
                 break;

@@ -19,6 +19,9 @@ tar = { workspace = true }
 libc = { workspace = true }
 cfg-if = { workspace = true }
 
+[dev-dependencies]
+samloader-odin = { workspace = true, features = ["mock"] }
+
 [features]
 default = ["nusb", "serialport"]
 rusb = ["samloader-odin/rusb"]

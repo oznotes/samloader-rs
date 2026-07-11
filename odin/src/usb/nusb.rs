@@ -129,15 +129,21 @@ impl UsbBackend for NusbBackend {
         let mut print_wait = false;
         loop {
             if let Ok(devices) = ::nusb::list_devices().wait() {
+                let mut matching_devices = Vec::new();
                 for device in devices {
                     if predicate(device.vendor_id(), device.product_id()) {
-                        return Ok(device);
+                        matching_devices.push(device);
                     }
                 }
+                if let Some(device) = select_unique_device(matching_devices)? {
+                    return Ok(device);
+                }
             }
-            if wait && !print_wait {
-                println!("Waiting for device...");
-                print_wait = true;
+            if wait {
+                if !print_wait {
+                    println!("Waiting for device...");
+                    print_wait = true;
+                }
                 std::thread::sleep(Duration::from_secs(1));
             } else {
                 break;

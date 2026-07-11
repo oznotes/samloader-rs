@@ -22,6 +22,12 @@ pub enum OdinError {
     #[error("Failed to detect compatible download-mode device.")]
     DeviceNotFound,
 
+    /// More than one compatible device matched the requested operation.
+    #[error(
+        "Multiple compatible devices were detected ({0}). Disconnect all but the intended device and try again."
+    )]
+    MultipleDevices(usize),
+
     /// Failed to access the USB device.
     #[cfg(target_os = "linux")]
     #[error(
