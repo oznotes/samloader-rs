@@ -20,8 +20,9 @@
 //! payloads in place instead of extracting the archive.
 
 use crate::error::{Error, Result};
-use std::fs::File;
-use std::io::{Read, Seek};
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, Write};
+use std::path::{Path, PathBuf};
 
 /// A single file member of a Samsung firmware ZIP archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +47,57 @@ pub struct FirmwareZipEntry {
 pub fn list_firmware_zip_entries(file: &File) -> Result<Vec<FirmwareZipEntry>> {
     let reader = file.try_clone()?;
     list_zip_entries_from_reader(reader)
+}
+
+/// Extracts selected flat firmware members into an existing private directory.
+///
+/// Callers use this only for compressed members, which cannot be memory-mapped
+/// directly from their ZIP byte ranges. Files are created without replacement
+/// and the returned paths preserve the requested order.
+pub fn extract_firmware_zip_entries(
+    file: &File,
+    names: &[String],
+    destination: &Path,
+) -> Result<Vec<PathBuf>> {
+    let reader = file.try_clone()?;
+    let mut archive = zip::ZipArchive::new(reader).map_err(|error| Error::Integrity {
+        message: format!("file is not a valid ZIP archive: {error}"),
+    })?;
+    let mut paths = Vec::with_capacity(names.len());
+
+    for name in names {
+        if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains(':') {
+            return Err(Error::Integrity {
+                message: format!("ZIP member {name:?} is not a flat file name."),
+            });
+        }
+        let mut entry = archive.by_name(name).map_err(|error| Error::Integrity {
+            message: format!("failed to open ZIP member {name:?}: {error}"),
+        })?;
+        if entry.is_dir() || entry.size() == 0 {
+            return Err(Error::Integrity {
+                message: format!("ZIP member {name:?} is not a non-empty file."),
+            });
+        }
+
+        let path = destination.join(name);
+        let mut output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)?;
+        let written = std::io::copy(&mut entry, &mut output)?;
+        output.flush()?;
+        if written != entry.size() {
+            return Err(Error::Integrity {
+                message: format!(
+                    "ZIP member {name:?} produced {written} bytes instead of the declared {} bytes.",
+                    entry.size()
+                ),
+            });
+        }
+        paths.push(path);
+    }
+    Ok(paths)
 }
 
 fn list_zip_entries_from_reader<R: Read + Seek>(reader: R) -> Result<Vec<FirmwareZipEntry>> {
@@ -171,6 +223,31 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert!(!entries[0].is_stored);
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn selected_deflated_members_extract_safely() {
+        let path = temp_zip_path("deflated-extract");
+        let payload = vec![0x5a; 4096];
+        write_zip(
+            &path,
+            &[(
+                "AP_test.tar.md5",
+                &payload,
+                zip::CompressionMethod::Deflated,
+            )],
+        );
+        let destination = temp_zip_path("extract-dir");
+        std::fs::create_dir(&destination).unwrap();
+        let paths = extract_firmware_zip_entries(
+            &std::fs::File::open(&path).unwrap(),
+            &["AP_test.tar.md5".to_string()],
+            &destination,
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&paths[0]).unwrap(), payload);
+        std::fs::remove_dir_all(destination).unwrap();
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

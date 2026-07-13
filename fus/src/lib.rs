@@ -25,7 +25,7 @@ mod fusclient;
 mod http;
 mod xml;
 
-pub use archive::{FirmwareZipEntry, list_firmware_zip_entries};
+pub use archive::{FirmwareZipEntry, extract_firmware_zip_entries, list_firmware_zip_entries};
 pub use download::{DownloadProgress, MAX_DOWNLOAD_THREADS};
 pub use error::{Error, Result};
 pub use fusclient::{Aes128EcbDec, FusClient};
