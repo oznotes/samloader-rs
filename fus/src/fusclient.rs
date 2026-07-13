@@ -359,6 +359,7 @@ fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 fn http_status_error(status: StatusCode, start: Option<u64>, end: Option<u64>) -> Error {
+    let range_request = start.is_some() || end.is_some();
     let retryable = matches!(
         status,
         StatusCode::REQUEST_TIMEOUT
@@ -368,7 +369,7 @@ fn http_status_error(status: StatusCode, start: Option<u64>, end: Option<u64>) -
             | StatusCode::BAD_GATEWAY
             | StatusCode::SERVICE_UNAVAILABLE
             | StatusCode::GATEWAY_TIMEOUT
-    );
+    ) || (range_request && status == StatusCode::NOT_FOUND);
     let range = match (start, end) {
         (Some(start), Some(end)) => format!("bytes {start}-{end}"),
         (Some(start), None) => format!("bytes {start}-EOF"),
@@ -568,6 +569,14 @@ mod tests {
         ));
         assert!(matches!(
             http_status_error(StatusCode::NOT_FOUND, Some(0), Some(15)),
+            Error::HttpStatus {
+                status: 404,
+                retryable: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            http_status_error(StatusCode::NOT_FOUND, None, None),
             Error::HttpStatus {
                 status: 404,
                 retryable: false,

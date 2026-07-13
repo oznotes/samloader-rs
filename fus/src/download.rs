@@ -1115,8 +1115,38 @@ mod tests {
     }
 
     #[test]
+    fn ranged_not_found_is_retried_as_a_stalled_connection() {
+        let responses = std::iter::repeat_with(|| (404, Vec::new()))
+            .take((MAX_STALL_RETRIES + 1) as usize)
+            .collect();
+        let (endpoint, ranges, server) = mock_range_server(responses, 16);
+        let info = crate::BinaryInform {
+            filename: "missing.zip.enc4".to_string(),
+            path: "/fixture/".to_string(),
+            size: 16,
+            key: vec![0; 16],
+            ..Default::default()
+        };
+        let client = FusClient::new_for_download_test(endpoint, info).unwrap();
+        let mut output = [0_u8; 16];
+        let abort = AtomicBool::new(false);
+
+        let outcome = download_chunk(&client, &mut output, 0, Some(15), &(), &abort);
+
+        assert!(matches!(
+            outcome,
+            ChunkOutcome::Stalled { decrypted: 0, .. }
+        ));
+        server.join().unwrap();
+        assert_eq!(
+            *ranges.lock().unwrap(),
+            vec!["bytes=0-15".to_string(); (MAX_STALL_RETRIES + 1) as usize]
+        );
+    }
+
+    #[test]
     fn permanent_http_status_is_not_retried_and_keeps_status() {
-        let (endpoint, ranges, server) = mock_range_server(vec![(404, Vec::new())], 16);
+        let (endpoint, ranges, server) = mock_range_server(vec![(403, Vec::new())], 16);
         let info = crate::BinaryInform {
             filename: "missing.zip.enc4".to_string(),
             path: "/fixture/".to_string(),
@@ -1133,7 +1163,7 @@ mod tests {
         assert!(matches!(
             outcome,
             ChunkOutcome::Failed(Error::HttpStatus {
-                status: 404,
+                status: 403,
                 retryable: false,
                 ..
             })
