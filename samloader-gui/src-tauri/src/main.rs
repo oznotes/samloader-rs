@@ -1612,23 +1612,7 @@ fn unpack_compressed_zip_sources(
     if plan.non_stored.is_empty() {
         return Ok(None);
     }
-    let parent = Path::new(zip_path)
-        .parent()
-        .unwrap_or_else(|| Path::new("."));
-    let workspace = tempfile::Builder::new()
-        .prefix(".samloader-flash-")
-        .tempdir_in(parent)
-        .or_else(|_| tempfile::tempdir())
-        .map_err(|error| format!("Failed to create temporary ZIP workspace: {error}"))?;
-    let free = available_space(workspace.path()).map_err(|error| {
-        format!("Failed to check free space for the temporary ZIP workspace: {error}")
-    })?;
-    if free < plan.unpack_size {
-        return Err(format!(
-            "The compressed firmware packages need {} bytes of temporary space, but only {free} bytes are available.",
-            plan.unpack_size
-        ));
-    }
+    let workspace = create_zip_workspace(zip_path, plan.unpack_size)?;
     let paths = extract_firmware_zip_entries(
         plan.archive_file.as_ref(),
         &plan.non_stored,
@@ -1654,6 +1638,40 @@ fn unpack_compressed_zip_sources(
         });
     }
     Ok(Some(workspace))
+}
+
+fn create_zip_workspace(zip_path: &str, required: u64) -> Result<TempDir, String> {
+    let parent = Path::new(zip_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let mut space_reports = Vec::new();
+
+    let adjacent = tempfile::Builder::new()
+        .prefix(".samloader-flash-")
+        .tempdir_in(parent);
+    if let Ok(workspace) = adjacent {
+        match available_space(workspace.path()) {
+            Ok(free) if free >= required => return Ok(workspace),
+            Ok(free) => space_reports.push(format!("ZIP folder: {free} bytes")),
+            Err(error) => space_reports.push(format!("ZIP folder: {error}")),
+        }
+    }
+
+    let workspace = tempfile::tempdir()
+        .map_err(|error| format!("Failed to create temporary ZIP workspace: {error}"))?;
+    match available_space(workspace.path()) {
+        Ok(free) if free >= required => Ok(workspace),
+        Ok(free) => {
+            space_reports.push(format!("system temporary folder: {free} bytes"));
+            Err(format!(
+                "Compressed firmware packages need {required} bytes of temporary space; available space was insufficient ({}).",
+                space_reports.join(", ")
+            ))
+        }
+        Err(error) => Err(format!(
+            "Failed to check free space for the temporary ZIP workspace: {error}"
+        )),
+    }
 }
 
 fn verify_reviewed_zip(zip_path: &str, reviewed: &PackageIdentity) -> Result<(), String> {
@@ -4271,6 +4289,17 @@ mod tests {
 
         drop(plan);
         drop(workspace);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn zip_workspace_rejects_impossible_space_requirement() {
+        let directory = temp_test_dir("gui-zip-space");
+        fs::create_dir_all(&directory).unwrap();
+        let zip_path = directory.join("firmware.zip");
+        fs::write(&zip_path, b"zip").unwrap();
+        let error = create_zip_workspace(zip_path.to_str().unwrap(), u64::MAX).unwrap_err();
+        assert!(error.contains("insufficient"));
         fs::remove_dir_all(directory).unwrap();
     }
 

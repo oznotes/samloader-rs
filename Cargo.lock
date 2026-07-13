@@ -3877,6 +3877,7 @@ dependencies = [
  "cfg-if",
  "clap",
  "fast-md5",
+ "fs2",
  "indicatif",
  "libc",
  "memmap2",

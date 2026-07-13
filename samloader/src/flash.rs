@@ -17,6 +17,7 @@
 use crate::{
     FolderPackages, PartitionArg, print_error, select_zip_packages, validate_package_selection,
 };
+use fs2::available_space;
 use memmap2::{Mmap, MmapOptions};
 use samloader_fus::{extract_firmware_zip_entries, list_firmware_zip_entries};
 use samloader_odin::{
@@ -99,6 +100,40 @@ struct TarSource {
     base_offset: u64,
     size: u64,
     verify_md5: bool,
+}
+
+fn create_zip_workspace(zip_path: &str, required: u64) -> Result<TempDir, String> {
+    let parent = Path::new(zip_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let mut space_reports = Vec::new();
+
+    let adjacent = tempfile::Builder::new()
+        .prefix(".samloader-flash-")
+        .tempdir_in(parent);
+    if let Ok(workspace) = adjacent {
+        match available_space(workspace.path()) {
+            Ok(free) if free >= required => return Ok(workspace),
+            Ok(free) => space_reports.push(format!("ZIP folder: {free} bytes")),
+            Err(error) => space_reports.push(format!("ZIP folder: {error}")),
+        }
+    }
+
+    let workspace = tempfile::tempdir()
+        .map_err(|error| format!("Failed to create temporary ZIP workspace: {error}"))?;
+    match available_space(workspace.path()) {
+        Ok(free) if free >= required => Ok(workspace),
+        Ok(free) => {
+            space_reports.push(format!("system temporary folder: {free} bytes"));
+            Err(format!(
+                "Compressed firmware packages need {required} bytes of temporary space; available space was insufficient ({}).",
+                space_reports.join(", ")
+            ))
+        }
+        Err(error) => Err(format!(
+            "Failed to check free space for the temporary ZIP workspace: {error}"
+        )),
+    }
 }
 
 fn tar_sources_from_paths(packages: &[String]) -> Result<Vec<TarSource>, i32> {
@@ -191,20 +226,28 @@ fn tar_sources_from_zip(
         })
         .cloned()
         .collect();
+    let unpack_size = compressed.iter().try_fold(0_u64, |total, member| {
+        let size = entries
+            .iter()
+            .find(|entry| &entry.name == member)
+            .expect("selected members always come from the entry list")
+            .size;
+        total.checked_add(size).ok_or(())
+    });
+    let unpack_size = match unpack_size {
+        Ok(size) => size,
+        Err(()) => {
+            print_error!("The selected compressed ZIP members declare an invalid total size.");
+            return Err(1);
+        }
+    };
     let workspace = if compressed.is_empty() {
         None
     } else {
-        let parent = Path::new(zip_path)
-            .parent()
-            .unwrap_or_else(|| Path::new("."));
-        let workspace = tempfile::Builder::new()
-            .prefix(".samloader-flash-")
-            .tempdir_in(parent)
-            .or_else(|_| tempfile::tempdir())
-            .map_err(|error| {
-                print_error!("Failed to create temporary ZIP workspace: {}", error);
-                1
-            })?;
+        let workspace = create_zip_workspace(zip_path, unpack_size).map_err(|error| {
+            print_error!("{}", error);
+            1
+        })?;
         if let Err(error) = extract_firmware_zip_entries(&file, &compressed, workspace.path()) {
             print_error!("Failed to unpack selected firmware packages: {}", error);
             return Err(1);
@@ -1925,6 +1968,16 @@ mod tests {
         drop(entries);
         drop(sources);
         drop(workspace);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn zip_workspace_rejects_impossible_space_requirement() {
+        let directory = temp_test_dir("zip-space");
+        let zip_path = directory.join("firmware.zip");
+        fs::write(&zip_path, b"zip").unwrap();
+        let error = create_zip_workspace(zip_path.to_str().unwrap(), u64::MAX).unwrap_err();
+        assert!(error.contains("insufficient"));
         fs::remove_dir_all(directory).unwrap();
     }
 

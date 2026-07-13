@@ -16,7 +16,7 @@ samloader-odin = { path = "../../odin", default-features = false, features = ["n
 samloader-pit = { path = "../../pit" }
 memmap2 = { workspace = true }
 dirs = "6"
-fs2 = "0.4"
+fs2 = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tar = { workspace = true }

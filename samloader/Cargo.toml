@@ -19,6 +19,7 @@ tar = { workspace = true }
 libc = { workspace = true }
 cfg-if = { workspace = true }
 tempfile = { workspace = true }
+fs2 = { workspace = true }
 
 [dev-dependencies]
 samloader-odin = { workspace = true, features = ["mock"] }
