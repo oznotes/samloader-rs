@@ -1,6 +1,7 @@
 # samloader
 
-An all-in-one Samsung firmware download and flash tool.
+An all-in-one Samsung firmware discovery, download, verification, and flash
+tool with a command-line interface and a Windows desktop application.
 
 > [!WARNING]
 > Firmware flashing writes device partitions. Confirm the exact device, model,
@@ -35,13 +36,38 @@ Options:
 - Downloads firmware using multiple parallel connections (default: 8) to bypass server-side connection speed throttling and maximize bandwidth usage.
 - Decrypts firmware files on-the-fly, eliminating separate download and decryption steps.
 - Supports flashing raw images and official package files across Linux, macOS, and Windows.
-- Auto-selects BL/AP/CP/CSC/USERDATA package files from an extracted firmware folder.
+- Flashes official firmware ZIPs directly and auto-selects BL/AP/CP/CSC/USERDATA packages.
+- Auto-selects the same package set from an extracted firmware folder.
 - Processes and extracts official TAR firmware packages in-memory, avoiding slow disk write operations.
 - Transmits raw LZ4-compressed data directly to supported devices to reduce USB transfer size and time.
 
-## Flashing an extracted firmware folder
+## Flashing official firmware
 
-After extracting the outer firmware ZIP, flash the folder directly:
+### Firmware ZIP
+
+Flash a complete official firmware ZIP without extracting it manually:
+
+```bash
+samloader flash --zip /path/to/firmware.zip
+```
+
+`HOME_CSC` is selected by default to preserve user data. Select regular `CSC`
+only when a factory reset is intended:
+
+```bash
+samloader flash --zip /path/to/firmware.zip --csc-mode wipe
+```
+
+ZIP members stored without compression are read directly from the archive.
+Compressed BL/AP/CP/CSC/USERDATA members are unpacked automatically into a
+temporary `.samloader-flash-*` directory beside the ZIP, or into the operating
+system temporary directory when the ZIP location is not writable or lacks
+space. Both locations are checked before extraction, and the temporary
+directory is removed after the flash finishes or exits with a handled error.
+
+### Extracted firmware folder
+
+An already-extracted package folder can also be flashed directly:
 
 ```bash
 samloader flash --folder /path/to/firmware-folder
@@ -57,10 +83,12 @@ samloader flash --folder /path/to/firmware-folder --csc-mode wipe
 
 ### Windows desktop
 
-The desktop interface can list known stable and beta firmware history, detect
-an authorized Android device through ADB, download with pause/resume/cancel and
-preflight checks, inspect PIT data, verify `.tar.md5` packages, and flash from
-packages or an extracted firmware folder.
+The desktop interface can list known stable, historical, and beta firmware;
+suggest or accept custom CSC regions; read the model and CSC from one authorized
+ADB device; download with pause/resume/cancel and disk-space preflight; inspect
+PIT data; verify `.tar.md5` packages; and flash from individual packages, an
+official firmware ZIP, or an extracted firmware folder. The equivalent CLI
+command remains visible for review and copying.
 
 Use the signed installer for the normal consumer setup. The portable executable
 requires the Microsoft Edge WebView2 runtime, which is normally present on

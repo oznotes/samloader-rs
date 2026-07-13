@@ -34,7 +34,7 @@ Configure repository secrets before creating a release tag:
 - `WINDOWS_CERTIFICATE_PASSWORD`: the `.pfx` export password.
 
 The certificate must be valid for code signing and unexpired. Push a tag that
-exactly matches the desktop version, for example `v2.0.2`; a successful tagged
+exactly matches the desktop version, for example `vX.Y.Z`; a successful tagged
 workflow publishes the signed assets. `workflow_dispatch` builds and uploads a
 signed workflow artifact without creating a public GitHub release.
 
@@ -69,8 +69,10 @@ fails closed when either approval is absent or refers to another build.
   cancel, retry, low disk, destination conflict, and a completed archive
   integrity verification
 - Flash: HOME_CSC, regular CSC factory-reset warning, wrong-model package,
-  mixed-version package set, duplicate partition, disconnect before session,
-  disconnect during transfer, PIT read/dump, and no-reboot
+  mixed-version package set, stored-member ZIP, compressed-member ZIP with
+  sufficient and insufficient temporary space, temporary-workspace cleanup,
+  duplicate partition, disconnect before session, disconnect during transfer,
+  PIT read/dump, and no-reboot
 - Repartition is tested only on dedicated recoverable hardware after a complete
   PIT backup and independent package/device compatibility review
 - Attempting to close or start another device operation during a flash is

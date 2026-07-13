@@ -296,9 +296,8 @@ export const missingRepartitionSlots = (packages: FolderPackages) =>
 export const packagesForFlashRequest = (folderMode: boolean, packages: FolderPackages): FolderPackages =>
   folderMode ? {} : { ...packages };
 
-// Zip mode may only flash once the ZIP has been scanned and every firmware
-// member is STORED (uncompressed); compressed members cannot be flashed in
-// place. Non-zip modes are unaffected.
+// ZIP mode may only flash after its package set has been scanned and reviewed.
+// Compressed members are unpacked by the backend before package verification.
 export function zipReviewValid(mode: FlashMode, zipScan: ZipScanResult | null): boolean {
   if (mode !== "zip") return true;
   return zipScan !== null;
@@ -362,7 +361,7 @@ export const detectedFirmwareIdentity = (device: Pick<AndroidDevice, "model" | "
 export function App() {
   const saved = useRef(readPreferences()).current;
   const [appInfo, setAppInfo] = useState<AppInfo>({
-    version: "2.0.2",
+    version: "2.0.3",
     defaultBackend: "vcom",
     backends: ["vcom", "nusb"],
   });
@@ -1485,7 +1484,7 @@ export function App() {
                           }}><FileArchive /></button>
                         </div>
                       </Field>
-                      <p className="folder-help">Flashes STORED (uncompressed) BL / AP / CP / CSC / USERDATA packages directly from the ZIP without extracting it.</p>
+                      <p className="folder-help">Flashes BL / AP / CP / CSC / USERDATA packages from the ZIP. Compressed packages are unpacked temporarily and cleaned automatically.</p>
                       <div className="folder-line csc-row">
                         <span className="csc-label">CSC package:</span>
                         <div className="mini-segments">
@@ -1650,7 +1649,7 @@ export function App() {
                   <div className="setting-row"><span><strong>Diagnostic logs</strong><small>Bounded desktop logs are retained at <code>%LOCALAPPDATA%\com.samloader.desktop\logs</code>.</small></span></div>
                 </Card>
                 <Card className="about-card">
-                  <div className="row between"><div><span className="label">About & licenses</span><h2>samloader <code>v{appInfo.version || "2.0.2"}</code></h2></div><SealCheck weight="fill" /></div>
+                  <div className="row between"><div><span className="label">About & licenses</span><h2>samloader <code>v{appInfo.version || "2.0.3"}</code></h2></div><SealCheck weight="fill" /></div>
                   <p>A consumer desktop interface for Samsung firmware discovery, download, verification, and flashing.</p>
                   <div className="license-list">
                     <div><strong>samloader</strong><span>Apache License 2.0</span></div>
