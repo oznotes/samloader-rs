@@ -23,7 +23,7 @@ use xml::{BinaryInform, VersionInfo};
 
 const FUS_API_BASE: &str = "https://neofussvr.sslcs.cdngc.net";
 const FUS_DOWNLOAD_ENDPOINT: &str =
-    "https://cloud-neofussvr.samsungmobile.com/NF_SmartDownloadBinaryForMass.do";
+    "http://cloud-neofussvr.samsungmobile.com/NF_SmartDownloadBinaryForMass.do";
 
 /// Block decryption cipher alias using AES-128 in ECB mode for FUS stream processing.
 pub type Aes128EcbDec = ecb::Decryptor<aes::Aes128>;
@@ -286,8 +286,7 @@ impl FusClient {
         let requested_file = format!("{}{}", self.info.path, self.info.filename);
         let mut request = self
             .client
-            .get(&self.download_endpoint)
-            .query(&[("file", requested_file)])
+            .get(format!("{}?file={requested_file}", self.download_endpoint))
             .header(AUTHORIZATION, self.make_authorization_value())
             .header(USER_AGENT, "SMART 2.0");
         request = match (start, end) {
@@ -519,8 +518,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn production_binary_endpoint_uses_https() {
-        assert!(FUS_DOWNLOAD_ENDPOINT.starts_with("https://"));
+    fn production_binary_endpoint_uses_legacy_plain_http() {
+        assert!(FUS_DOWNLOAD_ENDPOINT.starts_with("http://"));
+    }
+
+    #[test]
+    fn download_url_keeps_fus_file_path_unescaped() {
+        let info = BinaryInform {
+            path: "/encoded/slashes/".to_string(),
+            filename: "firmware.zip.enc4".to_string(),
+            ..Default::default()
+        };
+        let client =
+            FusClient::new_for_download_test("http://127.0.0.1:1/download".to_string(), info)
+                .unwrap();
+
+        let error = client.download_file_once(None, None).unwrap_err();
+
+        assert!(
+            error.url().is_some_and(|url| {
+                url.as_str().starts_with(
+                    "http://127.0.0.1:1/download?file=/encoded/slashes/firmware.zip.enc4",
+                )
+            }),
+            "unexpected request URL: {:?}",
+            error.url()
+        );
     }
 
     #[test]

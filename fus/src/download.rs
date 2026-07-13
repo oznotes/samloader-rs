@@ -293,6 +293,53 @@ const MAX_STALL_RETRIES: u32 = 4;
 /// aborting, instead of retrying forever.
 const MAX_DEAD_STALLS: u32 = 4;
 
+/// Smallest stalled range worth splitting. This is intentionally two AES
+/// blocks: production ranges are much larger, while the low value keeps the
+/// retry behavior testable without allocating large buffers.
+const MIN_RETRY_SPLIT_BYTES: usize = 32;
+
+/// Requeue a stalled tail. If the server repeatedly rejects a specific range
+/// shape, retrying the identical start/end pair can shed all but one worker
+/// without ever changing the request. Splitting on an AES block boundary gives
+/// the remaining workers smaller, valid ranges to try while preserving the
+/// exact destination slices.
+fn queue_stalled_remainder<'a>(
+    queue: &mut VecDeque<Chunk<'a>>,
+    buf: &'a mut [u8],
+    start: u64,
+    end: Option<u64>,
+) {
+    if let Some(split) = retry_split_point(buf.len()) {
+        let (first, second) = buf.split_at_mut(split);
+        queue.push_back(Chunk {
+            buf: first,
+            start,
+            end: Some(start + split as u64 - 1),
+        });
+        queue.push_back(Chunk {
+            buf: second,
+            start: start + split as u64,
+            end,
+        });
+        return;
+    }
+
+    queue.push_back(Chunk { buf, start, end });
+}
+
+fn retry_split_point(len: usize) -> Option<usize> {
+    if len < MIN_RETRY_SPLIT_BYTES {
+        return None;
+    }
+
+    let split = (len / 2) & !0x0f;
+    if split == 0 || split >= len {
+        None
+    } else {
+        Some(split)
+    }
+}
+
 /// A single download connection.
 fn run_worker(pool: &Pool<'_>, client: &FusClient, progress: &impl DownloadProgress) {
     // For the final surviving connection only: how many times in a row the whole
@@ -371,11 +418,6 @@ fn run_worker(pool: &Pool<'_>, client: &FusClient, progress: &impl DownloadProgr
                 let stall_off = chunk.start + decrypted as u64;
                 let Chunk { buf, end, .. } = chunk;
                 let (_done, rest) = buf.split_at_mut(decrypted);
-                let remainder = Chunk {
-                    buf: rest,
-                    start: stall_off,
-                    end,
-                };
 
                 let mut state = lock_unpoisoned(&pool.inner);
 
@@ -388,7 +430,7 @@ fn run_worker(pool: &Pool<'_>, client: &FusClient, progress: &impl DownloadProgr
                 }
 
                 state.in_flight -= 1;
-                state.queue.push_back(remainder);
+                queue_stalled_remainder(&mut state.queue, rest, stall_off, end);
 
                 if state.live > 1 {
                     // Other connections are still alive (and presumably making
@@ -1237,6 +1279,34 @@ mod tests {
             assert_eq!(dead_stalls, expected);
         }
         assert!(dead_stall_limit_reached(&mut dead_stalls, 0));
+    }
+
+    #[test]
+    fn stalled_remainders_split_on_aes_block_boundaries() {
+        assert_eq!(retry_split_point(0), None);
+        assert_eq!(retry_split_point(16), None);
+        assert_eq!(retry_split_point(31), None);
+        assert_eq!(retry_split_point(32), Some(16));
+        assert_eq!(retry_split_point(48), Some(16));
+        assert_eq!(retry_split_point(64), Some(32));
+    }
+
+    #[test]
+    fn stalled_tail_is_requeued_as_smaller_valid_ranges() {
+        let mut backing = [0_u8; 64];
+        let mut queue = VecDeque::new();
+
+        queue_stalled_remainder(&mut queue, &mut backing, 1024, None);
+
+        assert_eq!(queue.len(), 2);
+        let first = queue.pop_front().unwrap();
+        assert_eq!(first.start, 1024);
+        assert_eq!(first.end, Some(1055));
+        assert_eq!(first.buf.len(), 32);
+        let second = queue.pop_front().unwrap();
+        assert_eq!(second.start, 1056);
+        assert_eq!(second.end, None);
+        assert_eq!(second.buf.len(), 32);
     }
 
     #[test]
