@@ -4,115 +4,115 @@ Generated from the locked Windows x64 dependency graph. Regenerate with `npm run
 This file preserves the declared SPDX expressions and the actual LICENSE, COPYING, COPYRIGHT, NOTICE, and UNLICENSE texts shipped by every installed dependency. Identical documents are deduplicated without removing package attribution.
 Project, Heimdall-derived MIT, and font license texts are also distributed beside this file.
 
-## Rust crates (400)
+## Rust crates (401)
 
 - `adler2 2.0.1` — 0BSD OR MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0168](#d0168), [D0176](#d0176)
-- `aes 0.9.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0062](#d0062), [D0213](#d0213)
-- `ahash 0.7.8` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0315](#d0315)
+- `aes 0.9.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0062](#d0062), [D0214](#d0214)
+- `ahash 0.7.8` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0316](#d0316)
 - `aho-corasick 1.1.4` — Unlicense OR MIT (runtime/build); texts: [D0003](#d0003), [D0022](#d0022), [D0164](#d0164)
-- `alloc-no-stdlib 2.0.4` — BSD-3-Clause (runtime/build); texts: [D0238](#d0238)
-- `alloc-stdlib 0.2.4` — BSD-3-Clause (runtime/build); texts: [D0212](#d0212), [D0238](#d0238)
-- `anstream 1.0.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `anstyle 1.0.14` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `anstyle-parse 1.0.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `anstyle-query 1.1.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `anstyle-wincon 3.0.11` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
+- `alloc-no-stdlib 2.0.4` — BSD-3-Clause (runtime/build); texts: [D0239](#d0239)
+- `alloc-stdlib 0.2.4` — BSD-3-Clause (runtime/build); texts: [D0213](#d0213), [D0239](#d0239)
+- `anstream 1.0.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `anstyle 1.0.14` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `anstyle-parse 1.0.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `anstyle-query 1.1.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `anstyle-wincon 3.0.11` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
 - `anyhow 1.0.103` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
-- `array-init 2.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0248](#d0248), [D0279](#d0279)
-- `arrayvec 0.7.8` — MIT OR Apache-2.0 (runtime/build); texts: [D0107](#d0107), [D0208](#d0208)
-- `atomic-waker 1.1.2` — Apache-2.0 OR MIT (runtime/build); texts: [D0056](#d0056), [D0125](#d0125), [D0208](#d0208)
-- `autocfg 1.5.1` — Apache-2.0 OR MIT (runtime/build); texts: [D0068](#d0068), [D0208](#d0208)
-- `aws-lc-rs 1.17.0` — ISC AND (Apache-2.0 OR ISC) (runtime/build); texts: [D0231](#d0231)
+- `array-init 2.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0249](#d0249), [D0280](#d0280)
+- `arrayvec 0.7.8` — MIT OR Apache-2.0 (runtime/build); texts: [D0107](#d0107), [D0209](#d0209)
+- `atomic-waker 1.1.2` — Apache-2.0 OR MIT (runtime/build); texts: [D0056](#d0056), [D0125](#d0125), [D0209](#d0209)
+- `autocfg 1.5.1` — Apache-2.0 OR MIT (runtime/build); texts: [D0068](#d0068), [D0209](#d0209)
+- `aws-lc-rs 1.17.0` — ISC AND (Apache-2.0 OR ISC) (runtime/build); texts: [D0232](#d0232)
 - `aws-lc-sys 0.41.0` — ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) (runtime/build); texts: [D0146](#d0146)
-- `base64 0.22.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0021](#d0021), [D0208](#d0208)
-- `binrw 0.15.1` — MIT (runtime/build); texts: [D0216](#d0216), [D0246](#d0246)
-- `binrw_derive 0.15.1` — MIT (runtime/build); texts: [D0206](#d0206), [D0246](#d0246)
-- `bit-set 0.8.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0165](#d0165), [D0301](#d0301)
-- `bit-vec 0.8.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0165](#d0165), [D0301](#d0301)
-- `bitflags 1.3.2` — MIT/Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0208](#d0208)
-- `bitflags 2.13.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0208](#d0208)
+- `base64 0.22.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0021](#d0021), [D0209](#d0209)
+- `binrw 0.15.1` — MIT (runtime/build); texts: [D0217](#d0217), [D0247](#d0247)
+- `binrw_derive 0.15.1` — MIT (runtime/build); texts: [D0207](#d0207), [D0247](#d0247)
+- `bit-set 0.8.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0165](#d0165), [D0302](#d0302)
+- `bit-vec 0.8.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0165](#d0165), [D0302](#d0302)
+- `bitflags 1.3.2` — MIT/Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0209](#d0209)
+- `bitflags 2.13.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0209](#d0209)
 - `bitvec 1.1.1` — MIT (runtime/build); texts: [D0091](#d0091)
-- `block-buffer 0.10.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0213](#d0213), [D0266](#d0266)
-- `block-padding 0.4.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0195](#d0195), [D0213](#d0213)
+- `block-buffer 0.10.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0214](#d0214), [D0267](#d0267)
+- `block-padding 0.4.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0196](#d0196), [D0214](#d0214)
 - `borsh 1.7.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0157](#d0157)
 - `borsh-derive 1.7.0` — Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0157](#d0157)
-- `brotli 8.0.4` — BSD-3-Clause AND MIT (runtime/build); texts: [D0085](#d0085), [D0238](#d0238)
-- `brotli-decompressor 5.0.3` — BSD-3-Clause/MIT (runtime/build); texts: [D0238](#d0238)
-- `bs58 0.5.1` — MIT/Apache-2.0 (runtime/build); texts: [D0095](#d0095), [D0208](#d0208)
-- `byte-unit 5.2.5` — MIT (runtime/build); texts: [D0274](#d0274)
-- `bytecheck 0.6.12` — MIT (runtime/build); texts: [D0313](#d0313)
-- `bytecheck_derive 0.6.12` — MIT (runtime/build); texts: [D0313](#d0313)
-- `bytemuck 1.25.0` — Zlib OR Apache-2.0 OR MIT (runtime/build); texts: [D0167](#d0167), [D0200](#d0200), [D0283](#d0283)
+- `brotli 8.0.4` — BSD-3-Clause AND MIT (runtime/build); texts: [D0085](#d0085), [D0239](#d0239)
+- `brotli-decompressor 5.0.3` — BSD-3-Clause/MIT (runtime/build); texts: [D0239](#d0239)
+- `bs58 0.5.1` — MIT/Apache-2.0 (runtime/build); texts: [D0095](#d0095), [D0209](#d0209)
+- `byte-unit 5.2.5` — MIT (runtime/build); texts: [D0275](#d0275)
+- `bytecheck 0.6.12` — MIT (runtime/build); texts: [D0314](#d0314)
+- `bytecheck_derive 0.6.12` — MIT (runtime/build); texts: [D0314](#d0314)
+- `bytemuck 1.25.0` — Zlib OR Apache-2.0 OR MIT (runtime/build); texts: [D0167](#d0167), [D0201](#d0201), [D0284](#d0284)
 - `byteorder 1.5.0` — Unlicense OR MIT (runtime/build); texts: [D0003](#d0003), [D0022](#d0022), [D0164](#d0164)
 - `bytes 1.12.0` — MIT (runtime/build); texts: [D0100](#d0100)
-- `camino 1.2.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0208](#d0208)
+- `camino 1.2.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0209](#d0209)
 - `cargo_metadata 0.19.2` — MIT (runtime/build); texts: [D0056](#d0056)
 - `cargo_toml 0.22.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0134](#d0134)
 - `cargo-platform 0.1.9` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0176](#d0176)
-- `cc 1.2.65` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0208](#d0208)
-- `cfb 0.7.3` — MIT (runtime/build); texts: [D0290](#d0290)
+- `cc 1.2.65` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0209](#d0209)
+- `cfb 0.7.3` — MIT (runtime/build); texts: [D0291](#d0291)
 - `cfg_aliases 0.2.1` — MIT (runtime/build); texts: [D0042](#d0042), [D0077](#d0077)
-- `cfg-if 1.0.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0208](#d0208)
+- `cfg-if 1.0.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0209](#d0209)
 - `chrono 0.4.45` — MIT OR Apache-2.0 (runtime/build); texts: [D0050](#d0050)
-- `cipher 0.5.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0192](#d0192), [D0213](#d0213)
-- `clap 4.6.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `clap_builder 4.6.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `clap_lex 1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `cmake 0.1.58` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0208](#d0208)
-- `colorchoice 1.0.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
+- `cipher 0.5.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0193](#d0193), [D0214](#d0214)
+- `clap 4.6.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `clap_builder 4.6.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `clap_lex 1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `cmake 0.1.58` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0209](#d0209)
+- `colorchoice 1.0.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
 - `console 0.16.3` — MIT (runtime/build); texts: [D0086](#d0086)
-- `cookie 0.18.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0067](#d0067), [D0298](#d0298)
-- `cookie_store 0.22.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0225](#d0225), [D0229](#d0229)
-- `cpubits 0.1.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0001](#d0001), [D0213](#d0213)
-- `cpufeatures 0.2.17` — MIT OR Apache-2.0 (runtime/build); texts: [D0213](#d0213), [D0221](#d0221)
-- `cpufeatures 0.3.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0213](#d0213), [D0221](#d0221)
-- `crc32fast 1.5.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0123](#d0123), [D0229](#d0229)
-- `crossbeam-channel 0.5.15` — MIT OR Apache-2.0 (runtime/build); texts: [D0114](#d0114), [D0208](#d0208), [D0223](#d0223)
-- `crossbeam-utils 0.8.21` — MIT OR Apache-2.0 (runtime/build); texts: [D0114](#d0114), [D0208](#d0208)
-- `crypto-common 0.1.7` — MIT OR Apache-2.0 (runtime/build); texts: [D0078](#d0078), [D0213](#d0213)
-- `crypto-common 0.2.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0213](#d0213), [D0264](#d0264)
+- `cookie 0.18.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0067](#d0067), [D0299](#d0299)
+- `cookie_store 0.22.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0226](#d0226), [D0230](#d0230)
+- `cpubits 0.1.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0001](#d0001), [D0214](#d0214)
+- `cpufeatures 0.2.17` — MIT OR Apache-2.0 (runtime/build); texts: [D0214](#d0214), [D0222](#d0222)
+- `cpufeatures 0.3.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0214](#d0214), [D0222](#d0222)
+- `crc32fast 1.5.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0123](#d0123), [D0230](#d0230)
+- `crossbeam-channel 0.5.15` — MIT OR Apache-2.0 (runtime/build); texts: [D0114](#d0114), [D0209](#d0209), [D0224](#d0224)
+- `crossbeam-utils 0.8.21` — MIT OR Apache-2.0 (runtime/build); texts: [D0114](#d0114), [D0209](#d0209)
+- `crypto-common 0.1.7` — MIT OR Apache-2.0 (runtime/build); texts: [D0078](#d0078), [D0214](#d0214)
+- `crypto-common 0.2.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0214](#d0214), [D0265](#d0265)
 - `cssparser 0.36.0` — MPL-2.0 (runtime/build); texts: [D0044](#d0044)
 - `cssparser-macros 0.6.1` — MPL-2.0 (runtime/build); texts: [D0044](#d0044)
-- `ctor 0.8.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0211](#d0211), [D0312](#d0312)
-- `ctor-proc-macro 0.0.7` — Apache-2.0 OR MIT (runtime/build); texts: [D0211](#d0211), [D0312](#d0312)
-- `darling 0.23.0` — MIT (runtime/build); texts: [D0185](#d0185)
-- `darling_core 0.23.0` — MIT (runtime/build); texts: [D0185](#d0185)
-- `darling_macro 0.23.0` — MIT (runtime/build); texts: [D0185](#d0185)
-- `deranged 0.5.8` — MIT OR Apache-2.0 (runtime/build); texts: [D0052](#d0052), [D0292](#d0292)
+- `ctor 0.8.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0212](#d0212), [D0313](#d0313)
+- `ctor-proc-macro 0.0.7` — Apache-2.0 OR MIT (runtime/build); texts: [D0212](#d0212), [D0313](#d0313)
+- `darling 0.23.0` — MIT (runtime/build); texts: [D0186](#d0186)
+- `darling_core 0.23.0` — MIT (runtime/build); texts: [D0186](#d0186)
+- `darling_macro 0.23.0` — MIT (runtime/build); texts: [D0186](#d0186)
+- `deranged 0.5.8` — MIT OR Apache-2.0 (runtime/build); texts: [D0052](#d0052), [D0293](#d0293)
 - `derive_more 2.1.1` — MIT (runtime/build); texts: [D0174](#d0174)
 - `derive_more-impl 2.1.1` — MIT (runtime/build); texts: [D0174](#d0174)
-- `digest 0.10.7` — MIT OR Apache-2.0 (runtime/build); texts: [D0202](#d0202), [D0213](#d0213)
-- `dirs 6.0.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0137](#d0137), [D0265](#d0265)
-- `dirs-sys 0.5.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0137](#d0137), [D0265](#d0265)
-- `displaydoc 0.2.6` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0208](#d0208)
-- `document-features 0.2.12` — MIT OR Apache-2.0 (runtime/build); texts: [D0011](#d0011), [D0215](#d0215)
-- `dom_query 0.27.0` — MIT (runtime/build); texts: [D0218](#d0218)
-- `dpi 0.1.2` — Apache-2.0 AND MIT (runtime/build); texts: [D0203](#d0203), [D0211](#d0211)
+- `digest 0.10.7` — MIT OR Apache-2.0 (runtime/build); texts: [D0203](#d0203), [D0214](#d0214)
+- `dirs 6.0.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0137](#d0137), [D0266](#d0266)
+- `dirs-sys 0.5.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0137](#d0137), [D0266](#d0266)
+- `displaydoc 0.2.6` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0209](#d0209)
+- `document-features 0.2.12` — MIT OR Apache-2.0 (runtime/build); texts: [D0011](#d0011), [D0216](#d0216)
+- `dom_query 0.27.0` — MIT (runtime/build); texts: [D0219](#d0219)
+- `dpi 0.1.2` — Apache-2.0 AND MIT (runtime/build); texts: [D0204](#d0204), [D0212](#d0212)
 - `dtoa 1.0.11` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `dtoa-short 0.3.5` — MPL-2.0 (runtime/build); texts: [D0044](#d0044)
-- `dtor 0.3.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0211](#d0211), [D0312](#d0312)
-- `dtor-proc-macro 0.0.6` — Apache-2.0 OR MIT (runtime/build); texts: [D0211](#d0211), [D0312](#d0312)
-- `dunce 1.0.5` — CC0-1.0 OR MIT-0 OR Apache-2.0 (runtime/build); texts: [D0205](#d0205)
+- `dtor 0.3.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0212](#d0212), [D0313](#d0313)
+- `dtor-proc-macro 0.0.6` — Apache-2.0 OR MIT (runtime/build); texts: [D0212](#d0212), [D0313](#d0313)
+- `dunce 1.0.5` — CC0-1.0 OR MIT-0 OR Apache-2.0 (runtime/build); texts: [D0206](#d0206)
 - `dyn-clone 1.0.20` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `ecb 0.2.0` — MIT (runtime/build); texts: [D0143](#d0143)
-- `either 1.16.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0150](#d0150), [D0208](#d0208)
+- `either 1.16.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0150](#d0150), [D0209](#d0209)
 - `embed-resource 3.0.11` — MIT (runtime/build); texts: [D0036](#d0036)
-- `encode_unicode 1.0.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0261](#d0261), [D0269](#d0269)
-- `equivalent 1.0.2` — Apache-2.0 OR MIT (runtime/build); texts: [D0147](#d0147), [D0208](#d0208)
+- `encode_unicode 1.0.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0262](#d0262), [D0270](#d0270)
+- `equivalent 1.0.2` — Apache-2.0 OR MIT (runtime/build); texts: [D0147](#d0147), [D0209](#d0209)
 - `erased-serde 0.4.10` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
-- `fast-md5 1.0.0` — BSD-2-Clause (runtime/build); texts: [D0250](#d0250)
-- `fastrand 2.4.1` — Apache-2.0 OR MIT (runtime/build); texts: [D0056](#d0056), [D0208](#d0208)
-- `fdeflate 0.3.7` — MIT OR Apache-2.0 (runtime/build); texts: [D0020](#d0020), [D0245](#d0245)
+- `fast-md5 1.0.0` — BSD-2-Clause (runtime/build); texts: [D0251](#d0251)
+- `fastrand 2.4.1` — Apache-2.0 OR MIT (runtime/build); texts: [D0056](#d0056), [D0209](#d0209)
+- `fdeflate 0.3.7` — MIT OR Apache-2.0 (runtime/build); texts: [D0020](#d0020), [D0246](#d0246)
 - `fern 0.7.1` — MIT (runtime/build); texts: [D0122](#d0122)
-- `filetime 0.2.29` — MIT/Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0208](#d0208)
-- `find-msvc-tools 0.1.9` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0208](#d0208)
-- `flate2 1.1.9` — MIT OR Apache-2.0 (runtime/build); texts: [D0005](#d0005), [D0208](#d0208)
-- `fnv 1.0.7` — Apache-2.0 / MIT (runtime/build); texts: [D0132](#d0132), [D0208](#d0208)
+- `filetime 0.2.29` — MIT/Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0209](#d0209)
+- `find-msvc-tools 0.1.9` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0209](#d0209)
+- `flate2 1.1.9` — MIT OR Apache-2.0 (runtime/build); texts: [D0005](#d0005), [D0209](#d0209)
+- `fnv 1.0.7` — Apache-2.0 / MIT (runtime/build); texts: [D0132](#d0132), [D0209](#d0209)
 - `foldhash 0.2.0` — Zlib (runtime/build); texts: [D0040](#d0040)
-- `form_urlencoded 1.2.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0046](#d0046), [D0208](#d0208)
+- `form_urlencoded 1.2.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0046](#d0046), [D0209](#d0209)
 - `fs_extra 1.3.0` — MIT (runtime/build); texts: [D0058](#d0058)
-- `fs2 0.4.3` — MIT/Apache-2.0 (runtime/build); texts: [D0156](#d0156), [D0208](#d0208)
-- `funty 2.0.0` — MIT (runtime/build); texts: [D0305](#d0305)
+- `fs2 0.4.3` — MIT/Apache-2.0 (runtime/build); texts: [D0156](#d0156), [D0209](#d0209)
+- `funty 2.0.0` — MIT (runtime/build); texts: [D0306](#d0306)
 - `futures-channel 0.3.32` — MIT OR Apache-2.0 (runtime/build); texts: [D0066](#d0066), [D0133](#d0133)
 - `futures-core 0.3.32` — MIT OR Apache-2.0 (runtime/build); texts: [D0066](#d0066), [D0133](#d0133)
 - `futures-io 0.3.32` — MIT OR Apache-2.0 (runtime/build); texts: [D0066](#d0066), [D0133](#d0133)
@@ -120,137 +120,137 @@ Project, Heimdall-derived MIT, and font license texts are also distributed besid
 - `futures-sink 0.3.32` — MIT OR Apache-2.0 (runtime/build); texts: [D0066](#d0066), [D0133](#d0133)
 - `futures-task 0.3.32` — MIT OR Apache-2.0 (runtime/build); texts: [D0066](#d0066), [D0133](#d0133)
 - `futures-util 0.3.32` — MIT OR Apache-2.0 (runtime/build); texts: [D0066](#d0066), [D0133](#d0133)
-- `generic-array 0.14.7` — MIT (runtime/build); texts: [D0289](#d0289)
-- `getrandom 0.2.17` — MIT OR Apache-2.0 (runtime/build); texts: [D0096](#d0096), [D0217](#d0217)
-- `getrandom 0.3.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0070](#d0070), [D0217](#d0217)
-- `getrandom 0.4.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0110](#d0110), [D0217](#d0217)
-- `glob 0.3.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0208](#d0208)
-- `hashbrown 0.12.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0315](#d0315)
-- `hashbrown 0.17.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0315](#d0315)
-- `heck 0.5.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0156](#d0156), [D0208](#d0208)
-- `hex 0.4.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0229](#d0229), [D0306](#d0306)
-- `html5ever 0.38.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0169](#d0169), [D0208](#d0208)
-- `http 1.4.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0181](#d0181), [D0273](#d0273)
-- `http-body 1.0.1` — MIT (runtime/build); texts: [D0258](#d0258)
-- `http-body-util 0.1.3` — MIT (runtime/build); texts: [D0235](#d0235)
-- `httparse 1.10.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0033](#d0033), [D0208](#d0208)
-- `hybrid-array 0.4.12` — MIT OR Apache-2.0 (runtime/build); texts: [D0145](#d0145), [D0213](#d0213)
+- `generic-array 0.14.7` — MIT (runtime/build); texts: [D0290](#d0290)
+- `getrandom 0.2.17` — MIT OR Apache-2.0 (runtime/build); texts: [D0096](#d0096), [D0218](#d0218)
+- `getrandom 0.3.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0070](#d0070), [D0218](#d0218)
+- `getrandom 0.4.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0110](#d0110), [D0218](#d0218)
+- `glob 0.3.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0209](#d0209)
+- `hashbrown 0.12.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0316](#d0316)
+- `hashbrown 0.17.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0316](#d0316)
+- `heck 0.5.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0156](#d0156), [D0209](#d0209)
+- `hex 0.4.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0230](#d0230), [D0307](#d0307)
+- `html5ever 0.38.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0169](#d0169), [D0209](#d0209)
+- `http 1.4.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0182](#d0182), [D0274](#d0274)
+- `http-body 1.0.1` — MIT (runtime/build); texts: [D0259](#d0259)
+- `http-body-util 0.1.3` — MIT (runtime/build); texts: [D0236](#d0236)
+- `httparse 1.10.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0033](#d0033), [D0209](#d0209)
+- `hybrid-array 0.4.12` — MIT OR Apache-2.0 (runtime/build); texts: [D0145](#d0145), [D0214](#d0214)
 - `hyper 1.10.1` — MIT (runtime/build); texts: [D0074](#d0074)
-- `hyper-rustls 0.27.9` — Apache-2.0 OR ISC OR MIT (runtime/build); texts: [D0144](#d0144), [D0161](#d0161), [D0208](#d0208)
-- `hyper-tls 0.6.0` — MIT/Apache-2.0 (runtime/build); texts: [D0032](#d0032), [D0208](#d0208)
-- `hyper-util 0.1.20` — MIT (runtime/build); texts: [D0201](#d0201)
+- `hyper-rustls 0.27.9` — Apache-2.0 OR ISC OR MIT (runtime/build); texts: [D0144](#d0144), [D0161](#d0161), [D0209](#d0209)
+- `hyper-tls 0.6.0` — MIT/Apache-2.0 (runtime/build); texts: [D0032](#d0032), [D0209](#d0209)
+- `hyper-util 0.1.20` — MIT (runtime/build); texts: [D0202](#d0202)
 - `ico 0.5.0` — MIT (runtime/build); texts: [D0092](#d0092)
-- `icu_collections 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `icu_locale_core 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `icu_normalizer 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `icu_normalizer_data 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `icu_properties 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `icu_properties_data 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `icu_provider 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
+- `icu_collections 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `icu_locale_core 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `icu_normalizer 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `icu_normalizer_data 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `icu_properties 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `icu_properties_data 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `icu_provider 2.2.0` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
 - `ident_case 1.0.1` — MIT/Apache-2.0 (runtime/build); texts: [D0109](#d0109)
-- `idna 1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0226](#d0226)
-- `idna_adapter 1.2.2` — Apache-2.0 OR MIT (runtime/build); texts: [D0177](#d0177), [D0208](#d0208)
-- `indexmap 1.9.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0208](#d0208), [D0291](#d0291)
-- `indexmap 2.14.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0208](#d0208), [D0291](#d0291)
+- `idna 1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0227](#d0227)
+- `idna_adapter 1.2.2` — Apache-2.0 OR MIT (runtime/build); texts: [D0178](#d0178), [D0209](#d0209)
+- `indexmap 1.9.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0209](#d0209), [D0292](#d0292)
+- `indexmap 2.14.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0209](#d0209), [D0292](#d0292)
 - `indicatif 0.18.4` — MIT (runtime/build); texts: [D0086](#d0086)
 - `infer 0.19.0` — MIT (runtime/build); texts: [D0065](#d0065)
-- `inout 0.2.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0204](#d0204), [D0213](#d0213)
+- `inout 0.2.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0205](#d0205), [D0214](#d0214)
 - `ipnet 2.12.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0103](#d0103), [D0170](#d0170)
-- `is_terminal_polyfill 1.70.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
+- `is_terminal_polyfill 1.70.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
 - `itoa 1.0.18` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
-- `jobserver 0.1.34` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0208](#d0208)
-- `json-patch 3.0.1` — MIT/Apache-2.0 (runtime/build); texts: [D0171](#d0171), [D0229](#d0229)
+- `jobserver 0.1.34` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0209](#d0209)
+- `json-patch 3.0.1` — MIT/Apache-2.0 (runtime/build); texts: [D0171](#d0171), [D0230](#d0230)
 - `jsonptr 0.6.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0072](#d0072), [D0073](#d0073)
-- `keyboard-types 0.7.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0275](#d0275)
+- `keyboard-types 0.7.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0276](#d0276)
 - `libc 0.2.186` — MIT OR Apache-2.0 (runtime/build); texts: [D0024](#d0024), [D0126](#d0126)
-- `litemap 0.8.2` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
+- `litemap 0.8.2` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
 - `litrs 1.0.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0126](#d0126), [D0163](#d0163)
-- `lock_api 0.4.14` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0251](#d0251)
-- `log 0.4.33` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0208](#d0208)
-- `lru-slab 0.1.2` — MIT OR Apache-2.0 OR Zlib (runtime/build); texts: [D0013](#d0013), [D0029](#d0029), [D0261](#d0261)
+- `lock_api 0.4.14` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0252](#d0252)
+- `log 0.4.33` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0209](#d0209)
+- `lru-slab 0.1.2` — MIT OR Apache-2.0 OR Zlib (runtime/build); texts: [D0013](#d0013), [D0029](#d0029), [D0262](#d0262)
 - `lz4_flex 0.13.1` — MIT (runtime/build); texts: [D0014](#d0014)
-- `markup5ever 0.38.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0169](#d0169), [D0208](#d0208)
+- `markup5ever 0.38.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0169](#d0169), [D0209](#d0209)
 - `memchr 2.8.2` — Unlicense OR MIT (runtime/build); texts: [D0003](#d0003), [D0022](#d0022), [D0164](#d0164)
 - `memmap2 0.9.11` — MIT OR Apache-2.0 (runtime/build); texts: [D0008](#d0008), [D0019](#d0019)
-- `mime 0.3.17` — MIT OR Apache-2.0 (runtime/build); texts: [D0180](#d0180), [D0208](#d0208)
+- `mime 0.3.17` — MIT OR Apache-2.0 (runtime/build); texts: [D0181](#d0181), [D0209](#d0209)
 - `miniz_oxide 0.8.9` — MIT OR Zlib OR Apache-2.0 (runtime/build); texts: [D0015](#d0015), [D0020](#d0020), [D0090](#d0090), [D0152](#d0152)
 - `mio 1.2.1` — MIT (runtime/build); texts: [D0012](#d0012)
-- `modular-bitfield 0.13.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0208](#d0208)
-- `modular-bitfield-impl 0.13.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0048](#d0048), [D0056](#d0056), [D0063](#d0063), [D0075](#d0075), [D0208](#d0208)
-- `muda 0.19.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0026](#d0026), [D0071](#d0071), [D0208](#d0208)
-- `native-tls 0.2.18` — MIT OR Apache-2.0 (runtime/build); texts: [D0229](#d0229), [D0299](#d0299)
-- `new_debug_unreachable 1.0.6` — MIT (runtime/build); texts: [D0304](#d0304)
-- `num-conv 0.2.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0020](#d0020), [D0281](#d0281)
-- `num-traits 0.2.19` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0208](#d0208)
-- `nusb 0.2.4` — Apache-2.0 OR MIT (runtime/build); texts: [D0056](#d0056), [D0208](#d0208)
-- `once_cell 1.21.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0208](#d0208)
-- `once_cell_polyfill 1.70.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
+- `modular-bitfield 0.13.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0209](#d0209)
+- `modular-bitfield-impl 0.13.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0048](#d0048), [D0056](#d0056), [D0063](#d0063), [D0075](#d0075), [D0209](#d0209)
+- `muda 0.19.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0026](#d0026), [D0071](#d0071), [D0209](#d0209)
+- `native-tls 0.2.18` — MIT OR Apache-2.0 (runtime/build); texts: [D0230](#d0230), [D0300](#d0300)
+- `new_debug_unreachable 1.0.6` — MIT (runtime/build); texts: [D0305](#d0305)
+- `num-conv 0.2.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0020](#d0020), [D0282](#d0282)
+- `num-traits 0.2.19` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0209](#d0209)
+- `nusb 0.2.4` — Apache-2.0 OR MIT (runtime/build); texts: [D0056](#d0056), [D0209](#d0209)
+- `once_cell 1.21.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0209](#d0209)
+- `once_cell_polyfill 1.70.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
 - `option-ext 0.2.0` — MPL-2.0 (runtime/build); texts: [D0087](#d0087)
 - `owo-colors 4.3.0` — MIT (runtime/build); texts: [D0064](#d0064)
-- `parking_lot 0.12.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0251](#d0251)
-- `parking_lot_core 0.9.12` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0251](#d0251)
-- `percent-encoding 2.3.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0226](#d0226)
+- `parking_lot 0.12.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0252](#d0252)
+- `parking_lot_core 0.9.12` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0252](#d0252)
+- `percent-encoding 2.3.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0227](#d0227)
 - `phf 0.13.1` — MIT (runtime/build); texts: [D0016](#d0016)
 - `phf_codegen 0.13.1` — MIT (runtime/build); texts: [D0016](#d0016)
 - `phf_generator 0.13.1` — MIT (runtime/build); texts: [D0016](#d0016)
 - `phf_macros 0.13.1` — MIT (runtime/build); texts: [D0016](#d0016)
 - `phf_shared 0.13.1` — MIT (runtime/build); texts: [D0016](#d0016)
 - `pin-project-lite 0.2.17` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0056](#d0056)
-- `plist 1.10.0` — MIT (runtime/build); texts: [D0232](#d0232)
-- `png 0.17.16` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0288](#d0288)
+- `plist 1.10.0` — MIT (runtime/build); texts: [D0233](#d0233)
+- `png 0.17.16` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0289](#d0289)
 - `portable-atomic 1.13.1` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0056](#d0056)
-- `potential_utf 0.1.5` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
+- `potential_utf 0.1.5` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
 - `powerfmt 0.2.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0010](#d0010), [D0031](#d0031)
 - `ppv-lite86 0.2.21` — MIT OR Apache-2.0 (runtime/build); texts: [D0004](#d0004), [D0105](#d0105)
 - `precomputed-hash 0.1.1` — MIT (runtime/build); texts: [D0159](#d0159)
 - `proc-macro-crate 3.5.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0176](#d0176)
 - `proc-macro2 1.0.106` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
-- `psl-types 2.0.11` — MIT/Apache-2.0 (runtime/build); texts: [D0155](#d0155), [D0208](#d0208)
+- `psl-types 2.0.11` — MIT/Apache-2.0 (runtime/build); texts: [D0155](#d0155), [D0209](#d0209)
 - `ptr_meta 0.1.4` — MIT (runtime/build); texts: [D0127](#d0127)
 - `ptr_meta_derive 0.1.4` — MIT (runtime/build); texts: [D0127](#d0127)
-- `publicsuffix 2.3.0` — MIT/Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0296](#d0296)
-- `quick-xml 0.41.0` — MIT (runtime/build); texts: [D0297](#d0297)
-- `quinn 0.11.11` — MIT OR Apache-2.0 (runtime/build); texts: [D0104](#d0104), [D0244](#d0244)
-- `quinn-proto 0.11.15` — MIT OR Apache-2.0 (runtime/build); texts: [D0104](#d0104), [D0244](#d0244)
-- `quinn-udp 0.5.14` — MIT OR Apache-2.0 (runtime/build); texts: [D0104](#d0104), [D0244](#d0244)
+- `publicsuffix 2.3.0` — MIT/Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0297](#d0297)
+- `quick-xml 0.41.0` — MIT (runtime/build); texts: [D0298](#d0298)
+- `quinn 0.11.11` — MIT OR Apache-2.0 (runtime/build); texts: [D0104](#d0104), [D0245](#d0245)
+- `quinn-proto 0.11.15` — MIT OR Apache-2.0 (runtime/build); texts: [D0104](#d0104), [D0245](#d0245)
+- `quinn-udp 0.5.14` — MIT OR Apache-2.0 (runtime/build); texts: [D0104](#d0104), [D0245](#d0245)
 - `quote 1.0.46` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `radium 0.7.0` — MIT (runtime/build); texts: [D0028](#d0028)
-- `rand 0.8.6` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0079](#d0079), [D0187](#d0187)
-- `rand 0.9.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0079](#d0079), [D0187](#d0187)
-- `rand_chacha 0.3.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0187](#d0187), [D0217](#d0217)
-- `rand_chacha 0.9.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0079](#d0079), [D0187](#d0187)
-- `rand_core 0.6.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0141](#d0141), [D0187](#d0187)
-- `rand_core 0.9.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0141](#d0141), [D0187](#d0187)
-- `raw-window-handle 0.6.2` — MIT OR Apache-2.0 OR Zlib (runtime/build); texts: [D0020](#d0020), [D0198](#d0198), [D0220](#d0220)
+- `rand 0.8.6` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0079](#d0079), [D0188](#d0188)
+- `rand 0.9.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0079](#d0079), [D0188](#d0188)
+- `rand_chacha 0.3.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0188](#d0188), [D0218](#d0218)
+- `rand_chacha 0.9.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0079](#d0079), [D0188](#d0188)
+- `rand_core 0.6.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0141](#d0141), [D0188](#d0188)
+- `rand_core 0.9.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0045](#d0045), [D0141](#d0141), [D0188](#d0188)
+- `raw-window-handle 0.6.2` — MIT OR Apache-2.0 OR Zlib (runtime/build); texts: [D0020](#d0020), [D0199](#d0199), [D0221](#d0221)
 - `ref-cast 1.0.25` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `ref-cast-impl 1.0.25` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
-- `regex 1.12.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0208](#d0208)
-- `regex-automata 0.4.14` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0208](#d0208)
-- `regex-syntax 0.8.11` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0208](#d0208)
+- `regex 1.12.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0209](#d0209)
+- `regex-automata 0.4.14` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0209](#d0209)
+- `regex-syntax 0.8.11` — MIT OR Apache-2.0 (runtime/build); texts: [D0129](#d0129), [D0209](#d0209)
 - `rend 0.4.2` — MIT (runtime/build); texts: [D0127](#d0127)
-- `reqwest 0.13.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0149](#d0149), [D0190](#d0190)
+- `reqwest 0.13.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0149](#d0149), [D0191](#d0191)
 - `rfd 0.16.0` — MIT (runtime/build); texts: [D0131](#d0131)
-- `ring 0.17.14` — Apache-2.0 AND ISC (runtime/build); texts: [D0002](#d0002), [D0228](#d0228), [D0295](#d0295)
+- `ring 0.17.14` — Apache-2.0 AND ISC (runtime/build); texts: [D0002](#d0002), [D0229](#d0229), [D0296](#d0296)
 - `rkyv 0.7.46` — MIT (runtime/build); texts: [D0127](#d0127)
 - `rkyv_derive 0.7.46` — MIT (runtime/build); texts: [D0127](#d0127)
-- `roxmltree 0.21.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0316](#d0316)
-- `rust_decimal 1.42.1` — MIT (runtime/build); texts: [D0308](#d0308)
-- `rustc_version 0.4.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0251](#d0251)
+- `roxmltree 0.21.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0317](#d0317)
+- `rust_decimal 1.42.1` — MIT (runtime/build); texts: [D0309](#d0309)
+- `rustc_version 0.4.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0252](#d0252)
 - `rustc-hash 2.1.2` — Apache-2.0 OR MIT (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
-- `rustls 0.23.41` — Apache-2.0 OR ISC OR MIT (runtime/build); texts: [D0144](#d0144), [D0161](#d0161), [D0208](#d0208)
-- `rustls-pki-types 1.14.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0101](#d0101), [D0189](#d0189)
-- `rustls-platform-verifier 0.7.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0037](#d0037), [D0244](#d0244)
+- `rustls 0.23.41` — Apache-2.0 OR ISC OR MIT (runtime/build); texts: [D0144](#d0144), [D0161](#d0161), [D0209](#d0209)
+- `rustls-pki-types 1.14.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0101](#d0101), [D0190](#d0190)
+- `rustls-platform-verifier 0.7.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0037](#d0037), [D0245](#d0245)
 - `rustls-webpki 0.103.13` — ISC (runtime/build); texts: [D0115](#d0115)
-- `ryu 1.0.23` — Apache-2.0 OR BSL-1.0 (runtime/build); texts: [D0126](#d0126), [D0252](#d0252)
-- `same-file 1.0.6` — Unlicense/MIT (runtime/build); texts: [D0003](#d0003), [D0164](#d0164), [D0253](#d0253)
-- `schannel 0.1.29` — MIT (runtime/build); texts: [D0214](#d0214)
+- `ryu 1.0.23` — Apache-2.0 OR BSL-1.0 (runtime/build); texts: [D0126](#d0126), [D0253](#d0253)
+- `same-file 1.0.6` — Unlicense/MIT (runtime/build); texts: [D0003](#d0003), [D0164](#d0164), [D0254](#d0254)
+- `schannel 0.1.29` — MIT (runtime/build); texts: [D0215](#d0215)
 - `schemars 0.8.22` — MIT (runtime/build); texts: [D0034](#d0034)
 - `schemars 0.9.0` — MIT (runtime/build); texts: [D0034](#d0034)
 - `schemars 1.2.1` — MIT (runtime/build); texts: [D0034](#d0034)
 - `schemars_derive 0.8.22` — MIT (runtime/build); texts: [D0034](#d0034)
-- `scopeguard 1.2.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0311](#d0311)
-- `seahash 4.1.0` — MIT (runtime/build); texts: [D0035](#d0035), [D0188](#d0188)
-- `selectors 0.36.1` — MPL-2.0 (runtime/build); texts: [D0044](#d0044), [D0056](#d0056), [D0208](#d0208), [D0314](#d0314)
+- `scopeguard 1.2.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0312](#d0312)
+- `seahash 4.1.0` — MIT (runtime/build); texts: [D0035](#d0035), [D0189](#d0189)
+- `selectors 0.36.1` — MPL-2.0 (runtime/build); texts: [D0044](#d0044), [D0056](#d0056), [D0209](#d0209), [D0315](#d0315)
 - `semver 1.0.28` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `serde 1.0.228` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `serde_core 1.0.228` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
@@ -258,51 +258,52 @@ Project, Heimdall-derived MIT, and font license texts are also distributed besid
 - `serde_derive_internals 0.29.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `serde_json 1.0.150` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `serde_repr 0.1.20` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
-- `serde_spanned 1.1.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `serde_urlencoded 0.7.1` — MIT/Apache-2.0 (runtime/build); texts: [D0126](#d0126), [D0236](#d0236)
-- `serde_with 3.21.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0150](#d0150), [D0208](#d0208)
-- `serde_with_macros 3.21.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0150](#d0150), [D0208](#d0208)
+- `serde_spanned 1.1.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `serde_urlencoded 0.7.1` — MIT/Apache-2.0 (runtime/build); texts: [D0126](#d0126), [D0237](#d0237)
+- `serde_with 3.21.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0150](#d0150), [D0209](#d0209)
+- `serde_with_macros 3.21.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0150](#d0150), [D0209](#d0209)
 - `serde-untagged 0.1.9` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
-- `serialize-to-javascript 0.1.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0244](#d0244), [D0285](#d0285)
-- `serialize-to-javascript-impl 0.1.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0244](#d0244), [D0285](#d0285)
+- `serialize-to-javascript 0.1.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0245](#d0245), [D0286](#d0286)
+- `serialize-to-javascript-impl 0.1.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0245](#d0245), [D0286](#d0286)
 - `serialport 4.9.0` — MPL-2.0 (runtime/build); texts: [D0061](#d0061)
-- `servo_arc 0.4.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0208](#d0208)
-- `sha2 0.10.9` — MIT OR Apache-2.0 (runtime/build); texts: [D0213](#d0213), [D0230](#d0230)
+- `servo_arc 0.4.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0209](#d0209)
+- `sha2 0.10.9` — MIT OR Apache-2.0 (runtime/build); texts: [D0214](#d0214), [D0231](#d0231)
 - `shlex 2.0.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0099](#d0099), [D0113](#d0113)
 - `simd-adler32 0.3.9` — MIT (runtime/build); texts: [D0094](#d0094)
 - `simdutf8 0.1.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0020](#d0020), [D0109](#d0109)
-- `siphasher 1.0.3` — MIT/Apache-2.0 (runtime/build); texts: [D0249](#d0249)
-- `slab 0.4.12` — MIT (runtime/build); texts: [D0184](#d0184)
-- `smallvec 1.15.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0017](#d0017), [D0208](#d0208)
-- `socket2 0.6.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0208](#d0208)
-- `softbuffer 0.4.8` — MIT OR Apache-2.0 (runtime/build); texts: [D0148](#d0148), [D0207](#d0207)
-- `stable_deref_trait 1.2.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0083](#d0083), [D0208](#d0208)
-- `static_assertions 1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0261](#d0261), [D0287](#d0287)
-- `string_cache 0.9.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0124](#d0124), [D0208](#d0208)
-- `string_cache_codegen 0.6.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0124](#d0124), [D0208](#d0208)
+- `siphasher 1.0.3` — MIT/Apache-2.0 (runtime/build); texts: [D0250](#d0250)
+- `slab 0.4.12` — MIT (runtime/build); texts: [D0185](#d0185)
+- `smallvec 1.15.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0017](#d0017), [D0209](#d0209)
+- `socket2 0.6.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0081](#d0081), [D0209](#d0209)
+- `softbuffer 0.4.8` — MIT OR Apache-2.0 (runtime/build); texts: [D0148](#d0148), [D0208](#d0208)
+- `stable_deref_trait 1.2.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0083](#d0083), [D0209](#d0209)
+- `static_assertions 1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0262](#d0262), [D0288](#d0288)
+- `string_cache 0.9.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0124](#d0124), [D0209](#d0209)
+- `string_cache_codegen 0.6.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0124](#d0124), [D0209](#d0209)
 - `strsim 0.11.1` — MIT (runtime/build); texts: [D0043](#d0043)
-- `subtle 2.6.1` — BSD-3-Clause (runtime/build); texts: [D0255](#d0255)
-- `syn 1.0.109` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0208](#d0208)
+- `subtle 2.6.1` — BSD-3-Clause (runtime/build); texts: [D0256](#d0256)
+- `syn 1.0.109` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0209](#d0209)
 - `syn 2.0.118` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `sync_wrapper 1.0.2` — Apache-2.0 (runtime/build); texts: [D0020](#d0020)
 - `synstructure 0.13.2` — MIT (runtime/build); texts: [D0049](#d0049)
-- `tao 0.35.3` — Apache-2.0 (runtime/build); texts: [D0006](#d0006), [D0211](#d0211)
-- `tap 1.0.1` — MIT (runtime/build); texts: [D0178](#d0178)
-- `tar 0.4.46` — MIT OR Apache-2.0 (runtime/build); texts: [D0183](#d0183), [D0208](#d0208)
-- `tauri 2.11.5` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0199](#d0199)
-- `tauri-build 2.6.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0199](#d0199)
-- `tauri-codegen 2.6.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0199](#d0199)
-- `tauri-macros 2.6.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0199](#d0199)
-- `tauri-plugin 2.6.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0075](#d0075), [D0199](#d0199), [D0263](#d0263), [D0276](#d0276)
-- `tauri-plugin-dialog 2.7.1` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0197](#d0197), [D0199](#d0199)
-- `tauri-plugin-fs 2.5.1` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0197](#d0197), [D0199](#d0199)
-- `tauri-plugin-log 2.8.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0197](#d0197), [D0199](#d0199)
-- `tauri-plugin-single-instance 2.4.2` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0197](#d0197), [D0222](#d0222)
-- `tauri-runtime 2.11.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0199](#d0199)
-- `tauri-runtime-wry 2.11.4` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0199](#d0199)
-- `tauri-utils 2.9.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0199](#d0199)
-- `tauri-winres 0.3.6` — MIT (runtime/build); texts: [D0268](#d0268)
-- `tendril 0.5.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0120](#d0120), [D0208](#d0208)
+- `tao 0.35.3` — Apache-2.0 (runtime/build); texts: [D0006](#d0006), [D0212](#d0212)
+- `tap 1.0.1` — MIT (runtime/build); texts: [D0179](#d0179)
+- `tar 0.4.46` — MIT OR Apache-2.0 (runtime/build); texts: [D0184](#d0184), [D0209](#d0209)
+- `tauri 2.11.5` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0200](#d0200)
+- `tauri-build 2.6.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0200](#d0200)
+- `tauri-codegen 2.6.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0200](#d0200)
+- `tauri-macros 2.6.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0200](#d0200)
+- `tauri-plugin 2.6.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0075](#d0075), [D0200](#d0200), [D0264](#d0264), [D0277](#d0277)
+- `tauri-plugin-dialog 2.7.1` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0198](#d0198), [D0200](#d0200)
+- `tauri-plugin-fs 2.5.1` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0198](#d0198), [D0200](#d0200)
+- `tauri-plugin-log 2.8.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0198](#d0198), [D0200](#d0200)
+- `tauri-plugin-single-instance 2.4.2` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0198](#d0198), [D0223](#d0223)
+- `tauri-runtime 2.11.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0200](#d0200)
+- `tauri-runtime-wry 2.11.4` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0200](#d0200)
+- `tauri-utils 2.9.3` — Apache-2.0 OR MIT (runtime/build); texts: [D0020](#d0020), [D0200](#d0200)
+- `tauri-winres 0.3.6` — MIT (runtime/build); texts: [D0269](#d0269)
+- `tempfile 3.27.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0177](#d0177), [D0209](#d0209)
+- `tendril 0.5.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0120](#d0120), [D0209](#d0209)
 - `thiserror 1.0.69` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `thiserror 2.0.18` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `thiserror-impl 1.0.69` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
@@ -310,20 +311,20 @@ Project, Heimdall-derived MIT, and font license texts are also distributed besid
 - `time 0.3.51` — MIT OR Apache-2.0 (runtime/build); texts: [D0020](#d0020), [D0059](#d0059)
 - `time-core 0.1.9` — MIT OR Apache-2.0 (runtime/build); texts: [D0020](#d0020), [D0059](#d0059)
 - `time-macros 0.2.30` — MIT OR Apache-2.0 (runtime/build); texts: [D0020](#d0020), [D0059](#d0059)
-- `tinystr 0.8.3` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `tinyvec 1.11.0` — Zlib OR Apache-2.0 OR MIT (runtime/build); texts: [D0167](#d0167), [D0261](#d0261), [D0312](#d0312)
+- `tinystr 0.8.3` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `tinyvec 1.11.0` — Zlib OR Apache-2.0 OR MIT (runtime/build); texts: [D0167](#d0167), [D0262](#d0262), [D0313](#d0313)
 - `tinyvec_macros 0.1.1` — MIT OR Apache-2.0 OR Zlib (runtime/build); texts: [D0039](#d0039), [D0041](#d0041), [D0138](#d0138)
 - `tokio 1.52.3` — MIT (runtime/build); texts: [D0060](#d0060)
 - `tokio-native-tls 0.3.1` — MIT (runtime/build); texts: [D0173](#d0173)
-- `tokio-rustls 0.26.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0256](#d0256), [D0278](#d0278)
+- `tokio-rustls 0.26.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0257](#d0257), [D0279](#d0279)
 - `tokio-util 0.7.18` — MIT (runtime/build); texts: [D0060](#d0060)
-- `toml 0.9.12+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `toml 1.1.2+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `toml_datetime 0.7.5+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `toml_datetime 1.1.1+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `toml_edit 0.25.12+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `toml_parser 1.1.2+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
-- `toml_writer 1.1.1+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0229](#d0229)
+- `toml 0.9.12+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `toml 1.1.2+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `toml_datetime 0.7.5+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `toml_datetime 1.1.1+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `toml_edit 0.25.12+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `toml_parser 1.1.2+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
+- `toml_writer 1.1.1+spec-1.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0142](#d0142), [D0230](#d0230)
 - `tower 0.5.3` — MIT (runtime/build); texts: [D0093](#d0093)
 - `tower-http 0.6.11` — MIT (runtime/build); texts: [D0108](#d0108)
 - `tower-layer 0.3.3` — MIT (runtime/build); texts: [D0093](#d0093)
@@ -331,101 +332,101 @@ Project, Heimdall-derived MIT, and font license texts are also distributed besid
 - `tracing 0.1.44` — MIT (runtime/build); texts: [D0173](#d0173)
 - `tracing-attributes 0.1.31` — MIT (runtime/build); texts: [D0173](#d0173)
 - `tracing-core 0.1.36` — MIT (runtime/build); texts: [D0173](#d0173)
-- `tray-icon 0.24.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0071](#d0071), [D0098](#d0098), [D0208](#d0208)
-- `try-lock 0.2.5` — MIT (runtime/build); texts: [D0179](#d0179)
-- `twox-hash 2.1.2` — MIT (runtime/build); texts: [D0302](#d0302)
+- `tray-icon 0.24.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0071](#d0071), [D0098](#d0098), [D0209](#d0209)
+- `try-lock 0.2.5` — MIT (runtime/build); texts: [D0180](#d0180)
+- `twox-hash 2.1.2` — MIT (runtime/build); texts: [D0303](#d0303)
 - `typed-path 0.12.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
 - `typeid 1.0.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
-- `typenum 1.20.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0080](#d0080), [D0084](#d0084), [D0210](#d0210)
-- `unic-char-property 0.9.0` — MIT/Apache-2.0 (runtime/build); texts: [D0025](#d0025), [D0075](#d0075), [D0209](#d0209)
-- `unic-char-range 0.9.0` — MIT/Apache-2.0 (runtime/build); texts: [D0075](#d0075), [D0076](#d0076), [D0209](#d0209)
-- `unic-common 0.9.0` — MIT/Apache-2.0 (runtime/build); texts: [D0075](#d0075), [D0209](#d0209), [D0237](#d0237)
-- `unic-ucd-ident 0.9.0` — MIT/Apache-2.0 (runtime/build); texts: [D0009](#d0009), [D0075](#d0075), [D0209](#d0209)
-- `unic-ucd-version 0.9.0` — MIT/Apache-2.0 (runtime/build); texts: [D0075](#d0075), [D0209](#d0209), [D0267](#d0267)
-- `unicode-ident 1.0.24` — (MIT OR Apache-2.0) AND Unicode-3.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126), [D0307](#d0307)
-- `unicode-segmentation 1.13.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0053](#d0053), [D0156](#d0156), [D0208](#d0208)
-- `unicode-width 0.2.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0053](#d0053), [D0156](#d0156), [D0208](#d0208)
-- `unit-prefix 0.5.2` — MIT (runtime/build); texts: [D0227](#d0227)
+- `typenum 1.20.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0080](#d0080), [D0084](#d0084), [D0211](#d0211)
+- `unic-char-property 0.9.0` — MIT/Apache-2.0 (runtime/build); texts: [D0025](#d0025), [D0075](#d0075), [D0210](#d0210)
+- `unic-char-range 0.9.0` — MIT/Apache-2.0 (runtime/build); texts: [D0075](#d0075), [D0076](#d0076), [D0210](#d0210)
+- `unic-common 0.9.0` — MIT/Apache-2.0 (runtime/build); texts: [D0075](#d0075), [D0210](#d0210), [D0238](#d0238)
+- `unic-ucd-ident 0.9.0` — MIT/Apache-2.0 (runtime/build); texts: [D0009](#d0009), [D0075](#d0075), [D0210](#d0210)
+- `unic-ucd-version 0.9.0` — MIT/Apache-2.0 (runtime/build); texts: [D0075](#d0075), [D0210](#d0210), [D0268](#d0268)
+- `unicode-ident 1.0.24` — (MIT OR Apache-2.0) AND Unicode-3.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126), [D0308](#d0308)
+- `unicode-segmentation 1.13.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0053](#d0053), [D0156](#d0156), [D0209](#d0209)
+- `unicode-width 0.2.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0053](#d0053), [D0156](#d0156), [D0209](#d0209)
+- `unit-prefix 0.5.2` — MIT (runtime/build); texts: [D0228](#d0228)
 - `untrusted 0.9.0` — ISC (runtime/build); texts: [D0154](#d0154)
-- `url 2.5.8` — MIT OR Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0226](#d0226)
+- `url 2.5.8` — MIT OR Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0227](#d0227)
 - `urlpattern 0.3.0` — MIT (runtime/build); texts: [D0117](#d0117)
 - `utf-8 0.7.6` — MIT OR Apache-2.0 (runtime/build); texts: [D0056](#d0056), [D0126](#d0126)
-- `utf8_iter 1.0.4` — Apache-2.0 OR MIT (runtime/build); texts: [D0088](#d0088), [D0243](#d0243), [D0261](#d0261)
-- `utf8-width 0.1.9` — MIT (runtime/build); texts: [D0233](#d0233)
-- `utf8parse 0.2.2` — Apache-2.0 OR MIT (runtime/build); texts: [D0126](#d0126), [D0284](#d0284)
-- `uuid 1.23.4` — Apache-2.0 OR MIT (runtime/build); texts: [D0097](#d0097), [D0208](#d0208)
-- `value-bag 1.12.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0118](#d0118), [D0208](#d0208)
-- `version_check 0.9.5` — MIT/Apache-2.0 (runtime/build); texts: [D0208](#d0208), [D0234](#d0234)
-- `vswhom 0.1.0` — MIT (runtime/build); texts: [D0282](#d0282)
-- `vswhom-sys 0.1.3` — MIT (runtime/build); texts: [D0282](#d0282)
+- `utf8_iter 1.0.4` — Apache-2.0 OR MIT (runtime/build); texts: [D0088](#d0088), [D0244](#d0244), [D0262](#d0262)
+- `utf8-width 0.1.9` — MIT (runtime/build); texts: [D0234](#d0234)
+- `utf8parse 0.2.2` — Apache-2.0 OR MIT (runtime/build); texts: [D0126](#d0126), [D0285](#d0285)
+- `uuid 1.23.4` — Apache-2.0 OR MIT (runtime/build); texts: [D0097](#d0097), [D0209](#d0209)
+- `value-bag 1.12.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0118](#d0118), [D0209](#d0209)
+- `version_check 0.9.5` — MIT/Apache-2.0 (runtime/build); texts: [D0209](#d0209), [D0235](#d0235)
+- `vswhom 0.1.0` — MIT (runtime/build); texts: [D0283](#d0283)
+- `vswhom-sys 0.1.3` — MIT (runtime/build); texts: [D0283](#d0283)
 - `walkdir 2.5.0` — Unlicense/MIT (runtime/build); texts: [D0003](#d0003), [D0022](#d0022), [D0164](#d0164)
-- `want 0.3.1` — MIT (runtime/build); texts: [D0194](#d0194)
-- `web_atoms 0.2.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0169](#d0169), [D0208](#d0208)
+- `want 0.3.1` — MIT (runtime/build); texts: [D0195](#d0195)
+- `web_atoms 0.2.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0169](#d0169), [D0209](#d0209)
 - `webview2-com 0.38.2` — MIT (runtime/build); texts: [D0153](#d0153), [D0162](#d0162)
-- `webview2-com-macros 0.8.1` — MIT (runtime/build); texts: [D0128](#d0128), [D0257](#d0257)
-- `webview2-com-sys 0.38.2` — MIT (runtime/build); texts: [D0240](#d0240), [D0247](#d0247)
-- `winapi 0.3.9` — MIT/Apache-2.0 (runtime/build); texts: [D0229](#d0229), [D0259](#d0259)
-- `winapi-util 0.1.11` — Unlicense OR MIT (runtime/build); texts: [D0003](#d0003), [D0164](#d0164), [D0253](#d0253)
-- `window-vibrancy 0.6.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0121](#d0121), [D0160](#d0160), [D0208](#d0208)
-- `windows 0.61.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows_x86_64_msvc 0.52.6` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows_x86_64_msvc 0.53.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-collections 0.2.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-core 0.61.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-future 0.2.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-implement 0.60.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-interface 0.59.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-link 0.1.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-link 0.2.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-numerics 0.2.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-result 0.3.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-strings 0.4.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-sys 0.52.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-sys 0.59.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-sys 0.60.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-sys 0.61.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-targets 0.52.6` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-targets 0.53.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-threading 0.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `windows-version 0.1.7` — MIT OR Apache-2.0 (runtime/build); texts: [D0239](#d0239), [D0242](#d0242)
-- `winnow 0.7.15` — MIT (runtime/build); texts: [D0254](#d0254)
-- `winnow 1.0.3` — MIT (runtime/build); texts: [D0254](#d0254)
-- `winreg 0.55.0` — MIT (runtime/build); texts: [D0286](#d0286)
-- `writeable 0.6.3` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `wry 0.55.1` — Apache-2.0 OR MIT (runtime/build); texts: [D0208](#d0208), [D0294](#d0294), [D0303](#d0303)
+- `webview2-com-macros 0.8.1` — MIT (runtime/build); texts: [D0128](#d0128), [D0258](#d0258)
+- `webview2-com-sys 0.38.2` — MIT (runtime/build); texts: [D0241](#d0241), [D0248](#d0248)
+- `winapi 0.3.9` — MIT/Apache-2.0 (runtime/build); texts: [D0230](#d0230), [D0260](#d0260)
+- `winapi-util 0.1.11` — Unlicense OR MIT (runtime/build); texts: [D0003](#d0003), [D0164](#d0164), [D0254](#d0254)
+- `window-vibrancy 0.6.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0121](#d0121), [D0160](#d0160), [D0209](#d0209)
+- `windows 0.61.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows_x86_64_msvc 0.52.6` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows_x86_64_msvc 0.53.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-collections 0.2.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-core 0.61.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-future 0.2.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-implement 0.60.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-interface 0.59.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-link 0.1.3` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-link 0.2.1` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-numerics 0.2.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-result 0.3.4` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-strings 0.4.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-sys 0.52.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-sys 0.59.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-sys 0.60.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-sys 0.61.2` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-targets 0.52.6` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-targets 0.53.5` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-threading 0.1.0` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `windows-version 0.1.7` — MIT OR Apache-2.0 (runtime/build); texts: [D0240](#d0240), [D0243](#d0243)
+- `winnow 0.7.15` — MIT (runtime/build); texts: [D0255](#d0255)
+- `winnow 1.0.3` — MIT (runtime/build); texts: [D0255](#d0255)
+- `winreg 0.55.0` — MIT (runtime/build); texts: [D0287](#d0287)
+- `writeable 0.6.3` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `wry 0.55.1` — Apache-2.0 OR MIT (runtime/build); texts: [D0209](#d0209), [D0295](#d0295), [D0304](#d0304)
 - `wyz 0.5.1` — MIT (runtime/build); texts: [D0091](#d0091)
-- `yoke 0.8.3` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `yoke-derive 0.8.2` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
+- `yoke 0.8.3` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `yoke-derive 0.8.2` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
 - `zerocopy 0.8.52` — BSD-2-Clause OR Apache-2.0 OR MIT (runtime/build); texts: [D0030](#d0030), [D0057](#d0057), [D0166](#d0166)
-- `zerofrom 0.1.8` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `zerofrom-derive 0.1.7` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `zeroize 1.9.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0182](#d0182), [D0261](#d0261)
-- `zerotrie 0.2.4` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `zerovec 0.11.6` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
-- `zerovec-derive 0.11.3` — Unicode-3.0 (runtime/build); texts: [D0300](#d0300)
+- `zerofrom 0.1.8` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `zerofrom-derive 0.1.7` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `zeroize 1.9.0` — Apache-2.0 OR MIT (runtime/build); texts: [D0183](#d0183), [D0262](#d0262)
+- `zerotrie 0.2.4` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `zerovec 0.11.6` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
+- `zerovec-derive 0.11.3` — Unicode-3.0 (runtime/build); texts: [D0301](#d0301)
 - `zip 7.2.0` — MIT (runtime/build); texts: [D0027](#d0027)
-- `zlib-rs 0.6.6` — Zlib (runtime/build); texts: [D0219](#d0219)
+- `zlib-rs 0.6.6` — Zlib (runtime/build); texts: [D0220](#d0220)
 - `zmij 1.0.21` — MIT (runtime/build); texts: [D0056](#d0056)
 
 ## npm packages (59)
 
-- `@fontsource/instrument-sans 5.2.8` — OFL-1.1 (runtime); texts: [D0241](#d0241)
+- `@fontsource/instrument-sans 5.2.8` — OFL-1.1 (runtime); texts: [D0242](#d0242)
 - `@fontsource/jetbrains-mono 5.2.8` — OFL-1.1 (runtime); texts: [D0089](#d0089)
 - `@jridgewell/sourcemap-codec 1.5.5` — MIT (development); texts: [D0151](#d0151)
-- `@oxc-project/types 0.138.0` — MIT (development); texts: [D0193](#d0193)
+- `@oxc-project/types 0.138.0` — MIT (development); texts: [D0194](#d0194)
 - `@phosphor-icons/react 2.1.10` — MIT (runtime); texts: [D0135](#d0135)
-- `@rolldown/binding-win32-x64-msvc 1.1.4` — MIT (development); texts: [D0055](#d0055), [D0186](#d0186), [D0280](#d0280)
-- `@rolldown/pluginutils 1.0.1` — MIT (development); texts: [D0277](#d0277)
+- `@rolldown/binding-win32-x64-msvc 1.1.4` — MIT (development); texts: [D0055](#d0055), [D0187](#d0187), [D0281](#d0281)
+- `@rolldown/pluginutils 1.0.1` — MIT (development); texts: [D0278](#d0278)
 - `@standard-schema/spec 1.1.0` — MIT (development); texts: [D0139](#d0139)
-- `@tauri-apps/api 2.11.1` — Apache-2.0 OR MIT (runtime); texts: [D0020](#d0020), [D0199](#d0199)
-- `@tauri-apps/cli 2.11.4` — Apache-2.0 OR MIT (development); texts: [D0020](#d0020), [D0199](#d0199)
-- `@tauri-apps/cli-win32-x64-msvc 2.11.4` — Apache-2.0 OR MIT (development); texts: [D0020](#d0020), [D0075](#d0075), [D0199](#d0199), [D0263](#d0263), [D0310](#d0310)
-- `@tauri-apps/plugin-dialog 2.7.1` — MIT OR Apache-2.0 (runtime); texts: [D0197](#d0197)
-- `@types/chai 5.2.3` — MIT (development); texts: [D0242](#d0242)
-- `@types/deep-eql 4.0.2` — MIT (development); texts: [D0242](#d0242)
-- `@types/estree 1.0.9` — MIT (development); texts: [D0242](#d0242)
-- `@types/react 19.2.17` — MIT (development); texts: [D0242](#d0242)
-- `@types/react-dom 19.2.3` — MIT (development); texts: [D0242](#d0242)
+- `@tauri-apps/api 2.11.1` — Apache-2.0 OR MIT (runtime); texts: [D0020](#d0020), [D0200](#d0200)
+- `@tauri-apps/cli 2.11.4` — Apache-2.0 OR MIT (development); texts: [D0020](#d0020), [D0200](#d0200)
+- `@tauri-apps/cli-win32-x64-msvc 2.11.4` — Apache-2.0 OR MIT (development); texts: [D0020](#d0020), [D0075](#d0075), [D0200](#d0200), [D0264](#d0264), [D0311](#d0311)
+- `@tauri-apps/plugin-dialog 2.7.1` — MIT OR Apache-2.0 (runtime); texts: [D0198](#d0198)
+- `@types/chai 5.2.3` — MIT (development); texts: [D0243](#d0243)
+- `@types/deep-eql 4.0.2` — MIT (development); texts: [D0243](#d0243)
+- `@types/estree 1.0.9` — MIT (development); texts: [D0243](#d0243)
+- `@types/react 19.2.17` — MIT (development); texts: [D0243](#d0243)
+- `@types/react-dom 19.2.3` — MIT (development); texts: [D0243](#d0243)
 - `@vitejs/plugin-react 6.0.3` — MIT (development); texts: [D0069](#d0069)
 - `@vitest/expect 4.1.10` — MIT (development); texts: [D0007](#d0007)
 - `@vitest/mocker 4.1.10` — MIT (development); texts: [D0007](#d0007)
@@ -435,41 +436,41 @@ Project, Heimdall-derived MIT, and font license texts are also distributed besid
 - `@vitest/spy 4.1.10` — MIT (development); texts: [D0007](#d0007)
 - `@vitest/utils 4.1.10` — MIT (development); texts: [D0007](#d0007)
 - `assertion-error 2.0.1` — MIT (development); texts: [D0047](#d0047)
-- `chai 6.2.2` — MIT (development); texts: [D0224](#d0224)
+- `chai 6.2.2` — MIT (development); texts: [D0225](#d0225)
 - `convert-source-map 2.0.0` — MIT (development); texts: [D0018](#d0018)
 - `csstype 3.2.3` — MIT (development); texts: [D0023](#d0023)
-- `detect-libc 2.1.2` — Apache-2.0 (development); texts: [D0229](#d0229)
+- `detect-libc 2.1.2` — Apache-2.0 (development); texts: [D0230](#d0230)
 - `es-module-lexer 2.3.0` — MIT (development); texts: [D0175](#d0175)
-- `estree-walker 3.0.3` — MIT (development); texts: [D0272](#d0272)
+- `estree-walker 3.0.3` — MIT (development); texts: [D0273](#d0273)
 - `expect-type 1.4.0` — Apache-2.0 (development); texts: [D0158](#d0158)
-- `fdir 6.5.0` — MIT (development); texts: [D0196](#d0196)
+- `fdir 6.5.0` — MIT (development); texts: [D0197](#d0197)
 - `lightningcss 1.32.0` — MPL-2.0 (development); texts: [D0119](#d0119)
 - `lightningcss-win32-x64-msvc 1.32.0` — MPL-2.0 (development); texts: [D0119](#d0119)
 - `magic-string 0.30.21` — MIT (development); texts: [D0038](#d0038)
-- `nanoid 3.3.15` — MIT (development); texts: [D0270](#d0270)
-- `obug 2.1.3` — MIT (development); texts: [D0293](#d0293)
+- `nanoid 3.3.15` — MIT (development); texts: [D0271](#d0271)
+- `obug 2.1.3` — MIT (development); texts: [D0294](#d0294)
 - `pathe 2.0.3` — MIT (development); texts: [D0112](#d0112)
 - `picocolors 1.1.1` — ISC (development); texts: [D0130](#d0130)
-- `picomatch 4.0.5` — MIT (development); texts: [D0262](#d0262)
+- `picomatch 4.0.5` — MIT (development); texts: [D0263](#d0263)
 - `postcss 8.5.16` — MIT (development); texts: [D0116](#d0116)
-- `react 19.2.7` — MIT (runtime); texts: [D0271](#d0271)
-- `react-dom 19.2.7` — MIT (runtime); texts: [D0271](#d0271)
+- `react 19.2.7` — MIT (runtime); texts: [D0272](#d0272)
+- `react-dom 19.2.7` — MIT (runtime); texts: [D0272](#d0272)
 - `rolldown 1.1.4` — MIT (development); texts: [D0055](#d0055)
-- `scheduler 0.27.0` — MIT (runtime); texts: [D0271](#d0271)
+- `scheduler 0.27.0` — MIT (runtime); texts: [D0272](#d0272)
 - `siginfo 2.0.0` — ISC (development); texts: [D0082](#d0082)
 - `source-map-js 1.2.1` — BSD-3-Clause (development); texts: [D0140](#d0140)
 - `stackback 0.0.2` — MIT (development); texts: [D0054](#d0054), [D0106](#d0106)
 - `std-env 4.2.0` — MIT (development); texts: [D0102](#d0102)
-- `tinybench 2.9.0` — MIT (development); texts: [D0260](#d0260)
-- `tinyexec 1.2.4` — MIT (development); texts: [D0309](#d0309)
+- `tinybench 2.9.0` — MIT (development); texts: [D0261](#d0261)
+- `tinyexec 1.2.4` — MIT (development); texts: [D0310](#d0310)
 - `tinyglobby 0.2.17` — MIT (development); texts: [D0051](#d0051)
-- `tinyrainbow 3.1.0` — MIT (development); texts: [D0260](#d0260)
+- `tinyrainbow 3.1.0` — MIT (development); texts: [D0261](#d0261)
 - `typescript 6.0.3` — Apache-2.0 (development); texts: [D0111](#d0111)
-- `vite 8.1.3` — MIT (development); texts: [D0191](#d0191)
+- `vite 8.1.3` — MIT (development); texts: [D0192](#d0192)
 - `vitest 4.1.10` — MIT (development); texts: [D0172](#d0172)
 - `why-is-node-running 2.3.0` — MIT (development); texts: [D0136](#d0136)
 
-## Preserved license and notice texts (316)
+## Preserved license and notice texts (317)
 
 ### D0001
 
@@ -12060,6 +12061,39 @@ limitations under the License.
 
 ### D0177
 
+Packages: `cargo:tempfile@3.27.0`
+
+Source filenames: `LICENSE-MIT`
+
+<pre>Copyright (c) 2015 Steven Allen
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+</pre>
+
+### D0178
+
 Packages: `cargo:idna_adapter@1.2.2`
 
 Source filenames: `LICENSE-MIT`
@@ -12091,7 +12125,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0178
+### D0179
 
 Packages: `cargo:tap@1.0.1`
 
@@ -12120,7 +12154,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0179
+### D0180
 
 Packages: `cargo:try-lock@0.2.5`
 
@@ -12148,7 +12182,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0180
+### D0181
 
 Packages: `cargo:mime@0.3.17`
 
@@ -12175,7 +12209,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0181
+### D0182
 
 Packages: `cargo:http@1.4.2`
 
@@ -12384,7 +12418,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 </pre>
 
-### D0182
+### D0183
 
 Packages: `cargo:zeroize@1.9.0`
 
@@ -12417,7 +12451,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0183
+### D0184
 
 Packages: `cargo:tar@0.4.46`
 
@@ -12450,7 +12484,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0184
+### D0185
 
 Packages: `cargo:slab@0.4.12`
 
@@ -12483,7 +12517,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0185
+### D0186
 
 Packages: `cargo:darling@0.23.0`, `cargo:darling_core@0.23.0`, `cargo:darling_macro@0.23.0`
 
@@ -12512,7 +12546,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0186
+### D0187
 
 Packages: `npm:@rolldown/binding-win32-x64-msvc@1.1.4`
 
@@ -12539,7 +12573,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0187
+### D0188
 
 Packages: `cargo:rand@0.8.6`, `cargo:rand@0.9.4`, `cargo:rand_chacha@0.3.1`, `cargo:rand_chacha@0.9.0`, `cargo:rand_core@0.6.4`, `cargo:rand_core@0.9.5`
 
@@ -12559,7 +12593,7 @@ The Rand project includes code from the Rust project
 published under these same licenses.
 </pre>
 
-### D0188
+### D0189
 
 Packages: `cargo:seahash@4.1.0`
 
@@ -12586,7 +12620,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0189
+### D0190
 
 Packages: `cargo:rustls-pki-types@1.14.1`
 
@@ -12619,7 +12653,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0190
+### D0191
 
 Packages: `cargo:reqwest@0.13.4`
 
@@ -12646,7 +12680,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0191
+### D0192
 
 Packages: `npm:vite@8.1.3`
 
@@ -14941,7 +14975,7 @@ Repository: https://github.com/websockets/ws
 &gt; CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0192
+### D0193
 
 Packages: `cargo:cipher@0.5.2`
 
@@ -14974,7 +15008,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0193
+### D0194
 
 Packages: `npm:@oxc-project/types@0.138.0`
 
@@ -15004,7 +15038,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0194
+### D0195
 
 Packages: `cargo:want@0.3.1`
 
@@ -15031,7 +15065,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0195
+### D0196
 
 Packages: `cargo:block-padding@0.4.2`
 
@@ -15064,7 +15098,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0196
+### D0197
 
 Packages: `npm:fdir@6.5.0`
 
@@ -15079,7 +15113,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0197
+### D0198
 
 Packages: `cargo:tauri-plugin-dialog@2.7.1`, `cargo:tauri-plugin-fs@2.5.1`, `cargo:tauri-plugin-log@2.8.0`, `cargo:tauri-plugin-single-instance@2.4.2`, `npm:@tauri-apps/plugin-dialog@2.7.1`
 
@@ -15107,7 +15141,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
 Creator: Person: Daniel Thompson-Yvetot
 </pre>
 
-### D0198
+### D0199
 
 Packages: `cargo:raw-window-handle@0.6.2`
 
@@ -15136,7 +15170,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0199
+### D0200
 
 Packages: `cargo:tauri-build@2.6.3`, `cargo:tauri-codegen@2.6.3`, `cargo:tauri-macros@2.6.3`, `cargo:tauri-plugin-dialog@2.7.1`, `cargo:tauri-plugin-fs@2.5.1`, `cargo:tauri-plugin-log@2.8.0`, `cargo:tauri-plugin@2.6.3`, `cargo:tauri-runtime-wry@2.11.4`, `cargo:tauri-runtime@2.11.3`, `cargo:tauri-utils@2.9.3`, `cargo:tauri@2.11.5`, `npm:@tauri-apps/api@2.11.1`, `npm:@tauri-apps/cli-win32-x64-msvc@2.11.4`, `npm:@tauri-apps/cli@2.11.4`
 
@@ -15165,7 +15199,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0200
+### D0201
 
 Packages: `cargo:bytemuck@1.25.0`
 
@@ -15182,7 +15216,7 @@ The above copyright notice and this permission notice (including the next paragr
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0201
+### D0202
 
 Packages: `cargo:hyper-util@0.1.20`
 
@@ -15209,7 +15243,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0202
+### D0203
 
 Packages: `cargo:digest@0.10.7`
 
@@ -15242,7 +15276,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0203
+### D0204
 
 Packages: `cargo:dpi@0.1.2`
 
@@ -15301,7 +15335,7 @@ have been licensed under extremely permissive terms.
 ------------------------------------------------------------------------------
 </pre>
 
-### D0204
+### D0205
 
 Packages: `cargo:inout@0.2.2`
 
@@ -15335,7 +15369,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0205
+### D0206
 
 Packages: `cargo:dunce@1.0.5`
 
@@ -15464,7 +15498,7 @@ express Statement of Purpose.
     this CC0 or use of the Work.
 </pre>
 
-### D0206
+### D0207
 
 Packages: `cargo:binrw_derive@0.15.1`
 
@@ -15479,7 +15513,7 @@ Repository: https://github.com/jam1garner/binrw
 The installed package archive did not include its own top-level license or notice file; canonical license text and published attribution metadata are preserved here.
 </pre>
 
-### D0207
+### D0208
 
 Packages: `cargo:softbuffer@0.4.8`
 
@@ -15688,9 +15722,9 @@ Source filenames: `LICENSE-APACHE`
    limitations under the License.
 </pre>
 
-### D0208
+### D0209
 
-Packages: `cargo:ahash@0.7.8`, `cargo:arrayvec@0.7.8`, `cargo:atomic-waker@1.1.2`, `cargo:autocfg@1.5.1`, `cargo:base64@0.22.1`, `cargo:bitflags@1.3.2`, `cargo:bitflags@2.13.0`, `cargo:bs58@0.5.1`, `cargo:camino@1.2.4`, `cargo:cc@1.2.65`, `cargo:cfg-if@1.0.4`, `cargo:cmake@0.1.58`, `cargo:crossbeam-channel@0.5.15`, `cargo:crossbeam-utils@0.8.21`, `cargo:displaydoc@0.2.6`, `cargo:either@1.16.0`, `cargo:equivalent@1.0.2`, `cargo:fastrand@2.4.1`, `cargo:filetime@0.2.29`, `cargo:find-msvc-tools@0.1.9`, `cargo:flate2@1.1.9`, `cargo:fnv@1.0.7`, `cargo:form_urlencoded@1.2.2`, `cargo:fs2@0.4.3`, `cargo:glob@0.3.3`, `cargo:hashbrown@0.12.3`, `cargo:hashbrown@0.17.1`, `cargo:heck@0.5.0`, `cargo:html5ever@0.38.0`, `cargo:httparse@1.10.1`, `cargo:hyper-rustls@0.27.9`, `cargo:hyper-tls@0.6.0`, `cargo:idna@1.1.0`, `cargo:idna_adapter@1.2.2`, `cargo:indexmap@1.9.3`, `cargo:indexmap@2.14.0`, `cargo:jobserver@0.1.34`, `cargo:keyboard-types@0.7.0`, `cargo:lock_api@0.4.14`, `cargo:log@0.4.33`, `cargo:markup5ever@0.38.0`, `cargo:mime@0.3.17`, `cargo:modular-bitfield-impl@0.13.1`, `cargo:modular-bitfield@0.13.1`, `cargo:muda@0.19.3`, `cargo:num-traits@0.2.19`, `cargo:nusb@0.2.4`, `cargo:once_cell@1.21.4`, `cargo:parking_lot@0.12.5`, `cargo:parking_lot_core@0.9.12`, `cargo:percent-encoding@2.3.2`, `cargo:png@0.17.16`, `cargo:psl-types@2.0.11`, `cargo:publicsuffix@2.3.0`, `cargo:regex-automata@0.4.14`, `cargo:regex-syntax@0.8.11`, `cargo:regex@1.12.4`, `cargo:roxmltree@0.21.1`, `cargo:rustc_version@0.4.1`, `cargo:rustls@0.23.41`, `cargo:scopeguard@1.2.0`, `cargo:selectors@0.36.1`, `cargo:serde_with@3.21.0`, `cargo:serde_with_macros@3.21.0`, `cargo:servo_arc@0.4.3`, `cargo:smallvec@1.15.2`, `cargo:socket2@0.6.4`, `cargo:stable_deref_trait@1.2.1`, `cargo:string_cache@0.9.0`, `cargo:string_cache_codegen@0.6.1`, `cargo:syn@1.0.109`, `cargo:tar@0.4.46`, `cargo:tendril@0.5.0`, `cargo:tray-icon@0.24.1`, `cargo:unicode-segmentation@1.13.3`, `cargo:unicode-width@0.2.2`, `cargo:url@2.5.8`, `cargo:uuid@1.23.4`, `cargo:value-bag@1.12.0`, `cargo:version_check@0.9.5`, `cargo:web_atoms@0.2.5`, `cargo:window-vibrancy@0.6.0`, `cargo:wry@0.55.1`
+Packages: `cargo:ahash@0.7.8`, `cargo:arrayvec@0.7.8`, `cargo:atomic-waker@1.1.2`, `cargo:autocfg@1.5.1`, `cargo:base64@0.22.1`, `cargo:bitflags@1.3.2`, `cargo:bitflags@2.13.0`, `cargo:bs58@0.5.1`, `cargo:camino@1.2.4`, `cargo:cc@1.2.65`, `cargo:cfg-if@1.0.4`, `cargo:cmake@0.1.58`, `cargo:crossbeam-channel@0.5.15`, `cargo:crossbeam-utils@0.8.21`, `cargo:displaydoc@0.2.6`, `cargo:either@1.16.0`, `cargo:equivalent@1.0.2`, `cargo:fastrand@2.4.1`, `cargo:filetime@0.2.29`, `cargo:find-msvc-tools@0.1.9`, `cargo:flate2@1.1.9`, `cargo:fnv@1.0.7`, `cargo:form_urlencoded@1.2.2`, `cargo:fs2@0.4.3`, `cargo:glob@0.3.3`, `cargo:hashbrown@0.12.3`, `cargo:hashbrown@0.17.1`, `cargo:heck@0.5.0`, `cargo:html5ever@0.38.0`, `cargo:httparse@1.10.1`, `cargo:hyper-rustls@0.27.9`, `cargo:hyper-tls@0.6.0`, `cargo:idna@1.1.0`, `cargo:idna_adapter@1.2.2`, `cargo:indexmap@1.9.3`, `cargo:indexmap@2.14.0`, `cargo:jobserver@0.1.34`, `cargo:keyboard-types@0.7.0`, `cargo:lock_api@0.4.14`, `cargo:log@0.4.33`, `cargo:markup5ever@0.38.0`, `cargo:mime@0.3.17`, `cargo:modular-bitfield-impl@0.13.1`, `cargo:modular-bitfield@0.13.1`, `cargo:muda@0.19.3`, `cargo:num-traits@0.2.19`, `cargo:nusb@0.2.4`, `cargo:once_cell@1.21.4`, `cargo:parking_lot@0.12.5`, `cargo:parking_lot_core@0.9.12`, `cargo:percent-encoding@2.3.2`, `cargo:png@0.17.16`, `cargo:psl-types@2.0.11`, `cargo:publicsuffix@2.3.0`, `cargo:regex-automata@0.4.14`, `cargo:regex-syntax@0.8.11`, `cargo:regex@1.12.4`, `cargo:roxmltree@0.21.1`, `cargo:rustc_version@0.4.1`, `cargo:rustls@0.23.41`, `cargo:scopeguard@1.2.0`, `cargo:selectors@0.36.1`, `cargo:serde_with@3.21.0`, `cargo:serde_with_macros@3.21.0`, `cargo:servo_arc@0.4.3`, `cargo:smallvec@1.15.2`, `cargo:socket2@0.6.4`, `cargo:stable_deref_trait@1.2.1`, `cargo:string_cache@0.9.0`, `cargo:string_cache_codegen@0.6.1`, `cargo:syn@1.0.109`, `cargo:tar@0.4.46`, `cargo:tempfile@3.27.0`, `cargo:tendril@0.5.0`, `cargo:tray-icon@0.24.1`, `cargo:unicode-segmentation@1.13.3`, `cargo:unicode-width@0.2.2`, `cargo:url@2.5.8`, `cargo:uuid@1.23.4`, `cargo:value-bag@1.12.0`, `cargo:version_check@0.9.5`, `cargo:web_atoms@0.2.5`, `cargo:window-vibrancy@0.6.0`, `cargo:wry@0.55.1`
 
 Source filenames: `LICENSE-APACHE`
 
@@ -15897,7 +15931,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 </pre>
 
-### D0209
+### D0210
 
 Packages: `cargo:unic-char-property@0.9.0`, `cargo:unic-char-range@0.9.0`, `cargo:unic-common@0.9.0`, `cargo:unic-ucd-ident@0.9.0`, `cargo:unic-ucd-version@0.9.0`
 
@@ -15924,7 +15958,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0210
+### D0211
 
 Packages: `cargo:typenum@1.20.1`
 
@@ -15953,7 +15987,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0211
+### D0212
 
 Packages: `cargo:ctor-proc-macro@0.0.7`, `cargo:ctor@0.8.0`, `cargo:dpi@0.1.2`, `cargo:dtor-proc-macro@0.0.6`, `cargo:dtor@0.3.0`, `cargo:tao@0.35.3`
 
@@ -16162,7 +16196,7 @@ Source filenames: `LICENSE`, `LICENSE-APACHE`
    limitations under the License.
 </pre>
 
-### D0212
+### D0213
 
 Packages: `cargo:alloc-stdlib@0.2.4`
 
@@ -16177,7 +16211,7 @@ Repository: https://github.com/dropbox/rust-alloc-no-stdlib
 The installed package archive did not include its own top-level license or notice file; canonical license text and published attribution metadata are preserved here.
 </pre>
 
-### D0213
+### D0214
 
 Packages: `cargo:aes@0.9.1`, `cargo:block-buffer@0.10.4`, `cargo:block-padding@0.4.2`, `cargo:cipher@0.5.2`, `cargo:cpubits@0.1.1`, `cargo:cpufeatures@0.2.17`, `cargo:cpufeatures@0.3.0`, `cargo:crypto-common@0.1.7`, `cargo:crypto-common@0.2.2`, `cargo:digest@0.10.7`, `cargo:hybrid-array@0.4.12`, `cargo:inout@0.2.2`, `cargo:sha2@0.10.9`
 
@@ -16386,7 +16420,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 </pre>
 
-### D0214
+### D0215
 
 Packages: `cargo:schannel@0.1.29`
 
@@ -16401,7 +16435,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0215
+### D0216
 
 Packages: `cargo:document-features@0.2.12`
 
@@ -16428,7 +16462,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0216
+### D0217
 
 Packages: `cargo:binrw@0.15.1`
 
@@ -16443,7 +16477,7 @@ Repository: https://github.com/jam1garner/binrw
 The installed package archive did not include its own top-level license or notice file; canonical license text and published attribution metadata are preserved here.
 </pre>
 
-### D0217
+### D0218
 
 Packages: `cargo:getrandom@0.2.17`, `cargo:getrandom@0.3.4`, `cargo:getrandom@0.4.3`, `cargo:rand_chacha@0.3.1`
 
@@ -16652,7 +16686,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 </pre>
 
-### D0218
+### D0219
 
 Packages: `cargo:dom_query@0.27.0`
 
@@ -16687,7 +16721,7 @@ derived from the "nipper" project (https://github.com/importcjj/nipper),
 developed by Chen Jiaju, licensed under the MIT License and the Apache License 2.0 (dual licensed).
 </pre>
 
-### D0219
+### D0220
 
 Packages: `cargo:zlib-rs@0.6.6`
 
@@ -16714,7 +16748,7 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 </pre>
 
-### D0220
+### D0221
 
 Packages: `cargo:raw-window-handle@0.6.2`
 
@@ -16733,7 +16767,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 3. This notice may not be removed or altered from any source distribution.
 </pre>
 
-### D0221
+### D0222
 
 Packages: `cargo:cpufeatures@0.2.17`, `cargo:cpufeatures@0.3.0`
 
@@ -16766,7 +16800,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0222
+### D0223
 
 Packages: `cargo:tauri-plugin-single-instance@2.4.2`
 
@@ -16795,7 +16829,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0223
+### D0224
 
 Packages: `cargo:crossbeam-channel@0.5.15`
 
@@ -17396,7 +17430,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 </pre>
 
-### D0224
+### D0225
 
 Packages: `npm:chai@6.2.2`
 
@@ -17425,7 +17459,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0225
+### D0226
 
 Packages: `cargo:cookie_store@0.22.1`
 
@@ -17454,7 +17488,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0226
+### D0227
 
 Packages: `cargo:idna@1.1.0`, `cargo:percent-encoding@2.3.2`, `cargo:url@2.5.8`
 
@@ -17487,7 +17521,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0227
+### D0228
 
 Packages: `cargo:unit-prefix@0.5.2`
 
@@ -17516,7 +17550,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0228
+### D0229
 
 Packages: `cargo:ring@0.17.14`
 
@@ -17533,7 +17567,7 @@ See src/polyfill/once_cell/LICENSE-APACHE and src/polyfill/once_cell/LICENSE-MIT
 for the license to code that was sourced from the once_cell project.
 </pre>
 
-### D0229
+### D0230
 
 Packages: `cargo:anstream@1.0.0`, `cargo:anstyle-parse@1.0.0`, `cargo:anstyle-query@1.1.5`, `cargo:anstyle-wincon@3.0.11`, `cargo:anstyle@1.0.14`, `cargo:clap@4.6.1`, `cargo:clap_builder@4.6.0`, `cargo:clap_lex@1.1.0`, `cargo:colorchoice@1.0.5`, `cargo:cookie_store@0.22.1`, `cargo:crc32fast@1.5.0`, `cargo:hex@0.4.3`, `cargo:is_terminal_polyfill@1.70.2`, `cargo:json-patch@3.0.1`, `cargo:native-tls@0.2.18`, `cargo:once_cell_polyfill@1.70.2`, `cargo:serde_spanned@1.1.1`, `cargo:toml@0.9.12+spec-1.1.0`, `cargo:toml@1.1.2+spec-1.1.0`, `cargo:toml_datetime@0.7.5+spec-1.1.0`, `cargo:toml_datetime@1.1.1+spec-1.1.0`, `cargo:toml_edit@0.25.12+spec-1.1.0`, `cargo:toml_parser@1.1.2+spec-1.1.0`, `cargo:toml_writer@1.1.1+spec-1.1.0`, `cargo:winapi@0.3.9`, `npm:detect-libc@2.1.2`
 
@@ -17742,7 +17776,7 @@ Source filenames: `LICENSE`, `LICENSE-APACHE`
    limitations under the License.
 </pre>
 
-### D0230
+### D0231
 
 Packages: `cargo:sha2@0.10.9`
 
@@ -17777,7 +17811,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0231
+### D0232
 
 Packages: `cargo:aws-lc-rs@1.17.0`
 
@@ -17987,7 +18021,7 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 </pre>
 
-### D0232
+### D0233
 
 Packages: `cargo:plist@1.10.0`
 
@@ -18014,7 +18048,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0233
+### D0234
 
 Packages: `cargo:utf8-width@0.1.9`
 
@@ -18043,7 +18077,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0234
+### D0235
 
 Packages: `cargo:version_check@0.9.5`
 
@@ -18070,7 +18104,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0235
+### D0236
 
 Packages: `cargo:http-body-util@0.1.3`
 
@@ -18103,7 +18137,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0236
+### D0237
 
 Packages: `cargo:serde_urlencoded@0.7.1`
 
@@ -18136,7 +18170,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0237
+### D0238
 
 Packages: `cargo:unic-common@0.9.0`
 
@@ -18151,7 +18185,7 @@ Repository: https://github.com/open-i18n/rust-unic
 The installed package archive did not include its own top-level license or notice file; canonical license text and published attribution metadata are preserved here.
 </pre>
 
-### D0238
+### D0239
 
 Packages: `cargo:alloc-no-stdlib@2.0.4`, `cargo:alloc-stdlib@0.2.4`, `cargo:brotli-decompressor@5.0.3`, `cargo:brotli@8.0.4`
 
@@ -18171,7 +18205,7 @@ Redistribution and use in source and binary forms, with or without modification,
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 </pre>
 
-### D0239
+### D0240
 
 Packages: `cargo:windows-collections@0.2.0`, `cargo:windows-core@0.61.2`, `cargo:windows-future@0.2.1`, `cargo:windows-implement@0.60.2`, `cargo:windows-interface@0.59.3`, `cargo:windows-link@0.1.3`, `cargo:windows-link@0.2.1`, `cargo:windows-numerics@0.2.0`, `cargo:windows-result@0.3.4`, `cargo:windows-strings@0.4.2`, `cargo:windows-sys@0.52.0`, `cargo:windows-sys@0.59.0`, `cargo:windows-sys@0.60.2`, `cargo:windows-sys@0.61.2`, `cargo:windows-targets@0.52.6`, `cargo:windows-targets@0.53.5`, `cargo:windows-threading@0.1.0`, `cargo:windows-version@0.1.7`, `cargo:windows@0.61.3`, `cargo:windows_x86_64_msvc@0.52.6`, `cargo:windows_x86_64_msvc@0.53.1`
 
@@ -18380,7 +18414,7 @@ Source filenames: `license-apache-2.0`
    limitations under the License.
 </pre>
 
-### D0240
+### D0241
 
 Packages: `cargo:webview2-com-sys@0.38.2`
 
@@ -18395,7 +18429,7 @@ Repository: https://github.com/wravery/webview2-rs
 The installed package archive did not include its own top-level license or notice file; canonical license text and published attribution metadata are preserved here.
 </pre>
 
-### D0241
+### D0242
 
 Packages: `npm:@fontsource/instrument-sans@5.2.8`
 
@@ -18496,7 +18530,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 </pre>
 
-### D0242
+### D0243
 
 Packages: `cargo:windows-collections@0.2.0`, `cargo:windows-core@0.61.2`, `cargo:windows-future@0.2.1`, `cargo:windows-implement@0.60.2`, `cargo:windows-interface@0.59.3`, `cargo:windows-link@0.1.3`, `cargo:windows-link@0.2.1`, `cargo:windows-numerics@0.2.0`, `cargo:windows-result@0.3.4`, `cargo:windows-strings@0.4.2`, `cargo:windows-sys@0.52.0`, `cargo:windows-sys@0.59.0`, `cargo:windows-sys@0.60.2`, `cargo:windows-sys@0.61.2`, `cargo:windows-targets@0.52.6`, `cargo:windows-targets@0.53.5`, `cargo:windows-threading@0.1.0`, `cargo:windows-version@0.1.7`, `cargo:windows@0.61.3`, `cargo:windows_x86_64_msvc@0.52.6`, `cargo:windows_x86_64_msvc@0.53.1`, `npm:@types/chai@5.2.3`, `npm:@types/deep-eql@4.0.2`, `npm:@types/estree@1.0.9`, `npm:@types/react-dom@19.2.3`, `npm:@types/react@19.2.17`
 
@@ -18525,7 +18559,7 @@ Source filenames: `LICENSE`, `license-mit`
     SOFTWARE
 </pre>
 
-### D0243
+### D0244
 
 Packages: `cargo:utf8_iter@1.0.4`
 
@@ -18575,7 +18609,7 @@ licensed under the Apache License, Version 2.0 &lt;LICENSE-APACHE&gt; or
 &lt;LICENSE-MIT&gt; or &lt;http://opensource.org/licenses/MIT&gt;, at your option.
 </pre>
 
-### D0244
+### D0245
 
 Packages: `cargo:quinn-proto@0.11.15`, `cargo:quinn-udp@0.5.14`, `cargo:quinn@0.11.11`, `cargo:rustls-platform-verifier@0.7.0`, `cargo:serialize-to-javascript-impl@0.1.2`, `cargo:serialize-to-javascript@0.1.2`
 
@@ -18784,7 +18818,7 @@ Source filenames: `LICENSE-APACHE`
    limitations under the License.
 </pre>
 
-### D0245
+### D0246
 
 Packages: `cargo:fdeflate@0.3.7`
 
@@ -18817,7 +18851,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0246
+### D0247
 
 Packages: `cargo:binrw@0.15.1`, `cargo:binrw_derive@0.15.1`
 
@@ -18844,7 +18878,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0247
+### D0248
 
 Packages: `cargo:webview2-com-sys@0.38.2`
 
@@ -18871,7 +18905,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0248
+### D0249
 
 Packages: `cargo:array-init@2.1.0`
 
@@ -19080,7 +19114,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 </pre>
 
-### D0249
+### D0250
 
 Packages: `cargo:siphasher@1.0.3`
 
@@ -19095,7 +19129,7 @@ http://www.apache.org/licenses/LICENSE-2.0&gt; or the MIT license
 option.
 </pre>
 
-### D0250
+### D0251
 
 Packages: `cargo:fast-md5@1.0.0`
 
@@ -19127,7 +19161,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 </pre>
 
-### D0251
+### D0252
 
 Packages: `cargo:lock_api@0.4.14`, `cargo:parking_lot@0.12.5`, `cargo:parking_lot_core@0.9.12`, `cargo:rustc_version@0.4.1`
 
@@ -19160,7 +19194,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0252
+### D0253
 
 Packages: `cargo:ryu@1.0.23`
 
@@ -19191,7 +19225,7 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0253
+### D0254
 
 Packages: `cargo:same-file@1.0.6`, `cargo:winapi-util@0.1.11`
 
@@ -19220,7 +19254,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0254
+### D0255
 
 Packages: `cargo:winnow@0.7.15`, `cargo:winnow@1.0.3`
 
@@ -19246,7 +19280,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0255
+### D0256
 
 Packages: `cargo:subtle@2.6.1`
 
@@ -19283,7 +19317,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 </pre>
 
-### D0256
+### D0257
 
 Packages: `cargo:tokio-rustls@0.26.4`
 
@@ -19492,7 +19526,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 </pre>
 
-### D0257
+### D0258
 
 Packages: `cargo:webview2-com-macros@0.8.1`
 
@@ -19519,7 +19553,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0258
+### D0259
 
 Packages: `cargo:http-body@1.0.1`
 
@@ -19552,7 +19586,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0259
+### D0260
 
 Packages: `cargo:winapi@0.3.9`
 
@@ -19579,7 +19613,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0260
+### D0261
 
 Packages: `npm:tinybench@2.9.0`, `npm:tinyrainbow@3.1.0`
 
@@ -19608,7 +19642,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0261
+### D0262
 
 Packages: `cargo:encode_unicode@1.0.0`, `cargo:lru-slab@0.1.2`, `cargo:static_assertions@1.1.0`, `cargo:tinyvec@1.11.0`, `cargo:utf8_iter@1.0.4`, `cargo:zeroize@1.9.0`
 
@@ -19818,7 +19852,7 @@ Source filenames: `LICENSE-APACHE`, `LICENSE-APACHE.md`
    limitations under the License.
 </pre>
 
-### D0262
+### D0263
 
 Packages: `npm:picomatch@4.0.5`
 
@@ -19847,7 +19881,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0263
+### D0264
 
 Packages: `cargo:tauri-plugin@2.6.3`, `npm:@tauri-apps/cli-win32-x64-msvc@2.11.4`
 
@@ -19874,7 +19908,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0264
+### D0265
 
 Packages: `cargo:crypto-common@0.2.2`
 
@@ -19907,7 +19941,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0265
+### D0266
 
 Packages: `cargo:dirs-sys@0.5.0`, `cargo:dirs@6.0.0`
 
@@ -20089,7 +20123,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
    of your accepting any such warranty or additional liability.
 </pre>
 
-### D0266
+### D0267
 
 Packages: `cargo:block-buffer@0.10.4`
 
@@ -20122,7 +20156,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0267
+### D0268
 
 Packages: `cargo:unic-ucd-version@0.9.0`
 
@@ -20137,7 +20171,7 @@ Repository: https://github.com/open-i18n/rust-unic
 The installed package archive did not include its own top-level license or notice file; canonical license text and published attribution metadata are preserved here.
 </pre>
 
-### D0268
+### D0269
 
 Packages: `cargo:tauri-winres@0.3.6`
 
@@ -20173,7 +20207,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0269
+### D0270
 
 Packages: `cargo:encode_unicode@1.0.0`
 
@@ -20198,7 +20232,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE
 </pre>
 
-### D0270
+### D0271
 
 Packages: `npm:nanoid@3.3.15`
 
@@ -20226,7 +20260,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0271
+### D0272
 
 Packages: `npm:react-dom@19.2.7`, `npm:react@19.2.7`, `npm:scheduler@0.27.0`
 
@@ -20255,7 +20289,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0272
+### D0273
 
 Packages: `npm:estree-walker@3.0.3`
 
@@ -20270,7 +20304,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0273
+### D0274
 
 Packages: `cargo:http@1.4.2`
 
@@ -20303,7 +20337,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0274
+### D0275
 
 Packages: `cargo:byte-unit@5.2.5`
 
@@ -20332,7 +20366,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0275
+### D0276
 
 Packages: `cargo:keyboard-types@0.7.0`
 
@@ -20359,7 +20393,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0276
+### D0277
 
 Packages: `cargo:tauri-plugin@2.6.3`
 
@@ -20374,7 +20408,7 @@ Repository: https://github.com/tauri-apps/tauri
 The installed package archive did not include its own top-level license or notice file; canonical license text and published attribution metadata are preserved here.
 </pre>
 
-### D0277
+### D0278
 
 Packages: `npm:@rolldown/pluginutils@1.0.1`
 
@@ -20403,7 +20437,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0278
+### D0279
 
 Packages: `cargo:tokio-rustls@0.26.4`
 
@@ -20436,7 +20470,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0279
+### D0280
 
 Packages: `cargo:array-init@2.1.0`
 
@@ -20469,7 +20503,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0280
+### D0281
 
 Packages: `npm:@rolldown/binding-win32-x64-msvc@1.1.4`
 
@@ -20484,7 +20518,7 @@ Repository: https://github.com/rolldown/rolldown
 The installed package archive did not include its own top-level license or notice file; canonical license text and published attribution metadata are preserved here.
 </pre>
 
-### D0281
+### D0282
 
 Packages: `cargo:num-conv@0.2.2`
 
@@ -20511,7 +20545,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0282
+### D0283
 
 Packages: `cargo:vswhom-sys@0.1.3`, `cargo:vswhom@0.1.0`
 
@@ -20540,7 +20574,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0283
+### D0284
 
 Packages: `cargo:bytemuck@1.25.0`
 
@@ -20609,7 +20643,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 </pre>
 
-### D0284
+### D0285
 
 Packages: `cargo:utf8parse@0.2.2`
 
@@ -20642,7 +20676,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0285
+### D0286
 
 Packages: `cargo:serialize-to-javascript-impl@0.1.2`, `cargo:serialize-to-javascript@0.1.2`
 
@@ -20671,7 +20705,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0286
+### D0287
 
 Packages: `cargo:winreg@0.55.0`
 
@@ -20698,7 +20732,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0287
+### D0288
 
 Packages: `cargo:static_assertions@1.1.0`
 
@@ -20727,7 +20761,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0288
+### D0289
 
 Packages: `cargo:png@0.17.16`
 
@@ -20760,7 +20794,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0289
+### D0290
 
 Packages: `cargo:generic-array@0.14.7`
 
@@ -20789,7 +20823,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0290
+### D0291
 
 Packages: `cargo:cfb@0.7.3`
 
@@ -20818,7 +20852,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0291
+### D0292
 
 Packages: `cargo:indexmap@1.9.3`, `cargo:indexmap@2.14.0`
 
@@ -20851,7 +20885,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0292
+### D0293
 
 Packages: `cargo:deranged@0.5.8`
 
@@ -21061,7 +21095,7 @@ Source filenames: `LICENSE-Apache`
    limitations under the License.
 </pre>
 
-### D0293
+### D0294
 
 Packages: `npm:obug@2.1.3`
 
@@ -21092,7 +21126,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0294
+### D0295
 
 Packages: `cargo:wry@0.55.1`
 
@@ -21121,7 +21155,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0295
+### D0296
 
 Packages: `cargo:ring@0.17.14`
 
@@ -21142,7 +21176,7 @@ OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 </pre>
 
-### D0296
+### D0297
 
 Packages: `cargo:publicsuffix@2.3.0`
 
@@ -21171,7 +21205,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0297
+### D0298
 
 Packages: `cargo:quick-xml@0.41.0`
 
@@ -21202,7 +21236,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 </pre>
 
-### D0298
+### D0299
 
 Packages: `cargo:cookie@0.18.1`
 
@@ -21236,7 +21270,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0299
+### D0300
 
 Packages: `cargo:native-tls@0.2.18`
 
@@ -21263,7 +21297,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0300
+### D0301
 
 Packages: `cargo:icu_collections@2.2.0`, `cargo:icu_locale_core@2.2.0`, `cargo:icu_normalizer@2.2.0`, `cargo:icu_normalizer_data@2.2.0`, `cargo:icu_properties@2.2.0`, `cargo:icu_properties_data@2.2.0`, `cargo:icu_provider@2.2.0`, `cargo:litemap@0.8.2`, `cargo:potential_utf@0.1.5`, `cargo:tinystr@0.8.3`, `cargo:writeable@0.6.3`, `cargo:yoke-derive@0.8.2`, `cargo:yoke@0.8.3`, `cargo:zerofrom-derive@0.1.7`, `cargo:zerofrom@0.1.8`, `cargo:zerotrie@0.2.4`, `cargo:zerovec-derive@0.11.3`, `cargo:zerovec@0.11.6`
 
@@ -21317,7 +21351,7 @@ Portions of ICU4X may have been adapted from ICU4C and/or ICU4J.
 ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation and others.
 </pre>
 
-### D0301
+### D0302
 
 Packages: `cargo:bit-set@0.8.0`, `cargo:bit-vec@0.8.0`
 
@@ -21350,7 +21384,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0302
+### D0303
 
 Packages: `cargo:twox-hash@2.1.2`
 
@@ -21379,7 +21413,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0303
+### D0304
 
 Packages: `cargo:wry@0.55.1`
 
@@ -21407,7 +21441,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/wry.git
 Creator: Person: Daniel Thompson-Yvetot
 </pre>
 
-### D0304
+### D0305
 
 Packages: `cargo:new_debug_unreachable@1.0.6`
 
@@ -21440,7 +21474,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0305
+### D0306
 
 Packages: `cargo:funty@2.0.0`
 
@@ -21469,7 +21503,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0306
+### D0307
 
 Packages: `cargo:hex@0.4.3`
 
@@ -21497,7 +21531,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0307
+### D0308
 
 Packages: `cargo:unicode-ident@1.0.24`
 
@@ -21544,7 +21578,7 @@ dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
 </pre>
 
-### D0308
+### D0309
 
 Packages: `cargo:rust_decimal@1.42.1`
 
@@ -21573,7 +21607,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0309
+### D0310
 
 Packages: `npm:tinyexec@1.2.4`
 
@@ -21602,7 +21636,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
 
-### D0310
+### D0311
 
 Packages: `npm:@tauri-apps/cli-win32-x64-msvc@2.11.4`
 
@@ -21617,7 +21651,7 @@ Repository: https://github.com/tauri-apps/tauri
 The installed package archive did not include its own top-level license or notice file; canonical license text and published attribution metadata are preserved here.
 </pre>
 
-### D0311
+### D0312
 
 Packages: `cargo:scopeguard@1.2.0`
 
@@ -21650,7 +21684,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0312
+### D0313
 
 Packages: `cargo:ctor-proc-macro@0.0.7`, `cargo:ctor@0.8.0`, `cargo:dtor-proc-macro@0.0.6`, `cargo:dtor@0.3.0`, `cargo:tinyvec@1.11.0`
 
@@ -21663,7 +21697,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0313
+### D0314
 
 Packages: `cargo:bytecheck@0.6.12`, `cargo:bytecheck_derive@0.6.12`
 
@@ -21678,7 +21712,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0314
+### D0315
 
 Packages: `cargo:selectors@0.36.1`
 
@@ -21693,7 +21727,7 @@ Repository: https://github.com/servo/stylo
 The installed package archive did not include its own top-level license or notice file; canonical license text and published attribution metadata are preserved here.
 </pre>
 
-### D0315
+### D0316
 
 Packages: `cargo:ahash@0.7.8`, `cargo:hashbrown@0.12.3`, `cargo:hashbrown@0.17.1`
 
@@ -21726,7 +21760,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 </pre>
 
-### D0316
+### D0317
 
 Packages: `cargo:roxmltree@0.21.1`
 

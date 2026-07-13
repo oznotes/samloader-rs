@@ -160,12 +160,13 @@ describe("zip flash readiness", () => {
     packages: { ap: "AP_x.tar.md5", csc: "HOME_CSC_x.tar.md5" },
     identity: { path: "C:\\fw.zip", canonicalPath: "C:\\fw.zip", size: 10, modifiedUnixNanos: "1" },
     nonStored: [] as string[],
+    unpackBytes: 0,
   };
 
-  it("requires a scanned ZIP with only stored members", () => {
+  it("accepts scanned ZIPs with stored or compressed members", () => {
     expect(zipReviewValid("zip", null)).toBe(false);
     expect(zipReviewValid("zip", scan)).toBe(true);
-    expect(zipReviewValid("zip", { ...scan, nonStored: ["AP_x.tar.md5"] })).toBe(false);
+    expect(zipReviewValid("zip", { ...scan, nonStored: ["AP_x.tar.md5"] })).toBe(true);
     expect(zipReviewValid("folder", null)).toBe(true);
     expect(zipReviewValid("pkg", null)).toBe(true);
   });
@@ -179,13 +180,11 @@ describe("zip flash readiness", () => {
       .toBe("Ready to review flash.");
   });
 
-  it("explains compressed members with an extract fallback", () => {
+  it("allows compressed members after a successful scan", () => {
     const message = flashReadinessMessage(
       2, false, true, false, false, [], true, true,
       "zip", true, { ...scan, nonStored: ["AP_x.tar.md5"] },
     );
-    expect(message).toContain("compressed");
-    expect(message.toLowerCase()).toContain("extract");
-    expect(message).toContain("Firmware folder mode instead");
+    expect(message).toBe("Ready to review flash.");
   });
 });

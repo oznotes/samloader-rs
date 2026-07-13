@@ -3884,6 +3884,7 @@ dependencies = [
  "samloader-odin",
  "samloader-pit",
  "tar",
+ "tempfile",
  "zip",
 ]
 
@@ -3921,6 +3922,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-log",
  "tauri-plugin-single-instance",
+ "tempfile",
  "zip",
 ]
 

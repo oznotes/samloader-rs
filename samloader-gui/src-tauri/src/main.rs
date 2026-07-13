@@ -2,7 +2,9 @@
 
 use fs2::available_space;
 use memmap2::{Mmap, MmapOptions};
-use samloader_fus::{DownloadProgress, FusClient, try_fetch_version_xml};
+use samloader_fus::{
+    DownloadProgress, FusClient, extract_firmware_zip_entries, try_fetch_version_xml,
+};
 use samloader_odin::{
     FirmwareFile, FirmwareInfo, FirmwareLz4File, Lz4FrameHeader, OdinManager, UsbBackendOption,
     create_backend, detect_device_present_checked, reboot_download, validate_firmware_plan,
@@ -22,6 +24,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tar::Archive;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tempfile::TempDir;
 
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
@@ -1529,6 +1532,8 @@ struct ZipFlashPlan {
     sources: Vec<TarSource>,
     packages: FolderPackages,
     non_stored: Vec<String>,
+    unpack_size: u64,
+    archive_file: Arc<File>,
 }
 
 fn scan_zip_flash_plan(zip_path: &str, csc_mode: &str) -> Result<ZipFlashPlan, String> {
@@ -1556,6 +1561,7 @@ fn scan_zip_flash_plan(zip_path: &str, csc_mode: &str) -> Result<ZipFlashPlan, S
     let file = Arc::new(file);
     let mut sources = Vec::new();
     let mut non_stored = Vec::new();
+    let mut unpack_size = 0_u64;
     for member in &member_names {
         let entry = entries
             .iter()
@@ -1563,6 +1569,9 @@ fn scan_zip_flash_plan(zip_path: &str, csc_mode: &str) -> Result<ZipFlashPlan, S
             .expect("selected members always come from the entry list");
         if !entry.is_stored {
             non_stored.push(member.clone());
+            unpack_size = unpack_size.checked_add(entry.size).ok_or_else(|| {
+                "The selected compressed ZIP members declare an invalid total size.".to_string()
+            })?;
             continue;
         }
         if entry.size == 0 {
@@ -1591,7 +1600,60 @@ fn scan_zip_flash_plan(zip_path: &str, csc_mode: &str) -> Result<ZipFlashPlan, S
         sources,
         packages,
         non_stored,
+        unpack_size,
+        archive_file: file,
     })
+}
+
+fn unpack_compressed_zip_sources(
+    zip_path: &str,
+    plan: &mut ZipFlashPlan,
+) -> Result<Option<TempDir>, String> {
+    if plan.non_stored.is_empty() {
+        return Ok(None);
+    }
+    let parent = Path::new(zip_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let workspace = tempfile::Builder::new()
+        .prefix(".samloader-flash-")
+        .tempdir_in(parent)
+        .or_else(|_| tempfile::tempdir())
+        .map_err(|error| format!("Failed to create temporary ZIP workspace: {error}"))?;
+    let free = available_space(workspace.path()).map_err(|error| {
+        format!("Failed to check free space for the temporary ZIP workspace: {error}")
+    })?;
+    if free < plan.unpack_size {
+        return Err(format!(
+            "The compressed firmware packages need {} bytes of temporary space, but only {free} bytes are available.",
+            plan.unpack_size
+        ));
+    }
+    let paths = extract_firmware_zip_entries(
+        plan.archive_file.as_ref(),
+        &plan.non_stored,
+        workspace.path(),
+    )
+    .map_err(|error| format!("Failed to unpack selected firmware packages: {error}"))?;
+
+    for (member, path) in plan.non_stored.iter().zip(paths) {
+        let file = File::open(&path)
+            .map_err(|error| format!("Failed to open unpacked ZIP member \"{member}\": {error}"))?;
+        let size = file
+            .metadata()
+            .map_err(|error| {
+                format!("Failed to inspect unpacked ZIP member \"{member}\": {error}")
+            })?
+            .len();
+        plan.sources.push(TarSource {
+            display_name: format!("{member} (in {zip_path})"),
+            file: Arc::new(file),
+            base_offset: 0,
+            size,
+            verify_md5: member.to_lowercase().ends_with(".md5"),
+        });
+    }
+    Ok(Some(workspace))
 }
 
 fn verify_reviewed_zip(zip_path: &str, reviewed: &PackageIdentity) -> Result<(), String> {
@@ -2401,9 +2463,10 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
     let usb_backend = backend_from_str(&req.backend)?;
     let zip_source = req.zip.clone();
     // Computed once from the reviewed ZIP below and reused for source scanning,
-    // so the reviewed plan (non_stored-empty, packages == req.packages) is the
-    // exact one that gets flashed — no second scan, no drop window.
+    // so the reviewed package plan is the exact one that gets flashed.
     let mut zip_plan_sources: Option<Vec<TarSource>> = None;
+    // Retain extracted files while their mappings are used throughout flashing.
+    let mut _zip_workspace: Option<TempDir> = None;
     let selected_packages = if let Some(zip_path) = zip_source.as_deref() {
         if req.folder.is_some() {
             return Err(
@@ -2414,19 +2477,23 @@ fn run_flash(app: AppHandle, req: FlashRequest) -> Result<(), String> {
             return Err("Review the firmware ZIP before flashing. Scan the ZIP again.".to_string());
         };
         verify_reviewed_zip(zip_path, reviewed)?;
-        let plan = scan_zip_flash_plan(zip_path, &req.csc_mode)?;
-        if !plan.non_stored.is_empty() {
-            return Err(format!(
-                "{} is compressed inside the ZIP archive and cannot be flashed in place. Extract the ZIP and use Firmware folder mode instead.",
-                plan.non_stored.join(", ")
-            ));
-        }
+        let mut plan = scan_zip_flash_plan(zip_path, &req.csc_mode)?;
         if plan.packages != req.packages {
             return Err(
                 "The firmware ZIP contents changed after review. Scan the ZIP again and review the updated package list before flashing."
                     .to_string(),
             );
         }
+        if !plan.non_stored.is_empty() {
+            emit_flash(
+                &app,
+                "preparing",
+                None,
+                0.0,
+                Some("Unpacking compressed firmware packages".to_string()),
+            );
+        }
+        _zip_workspace = unpack_compressed_zip_sources(zip_path, &mut plan)?;
         zip_plan_sources = Some(plan.sources);
         plan.packages
     } else if let Some(folder) = req.folder.as_deref() {
@@ -3112,6 +3179,7 @@ struct ZipScanResult {
     packages: FolderPackages,
     identity: PackageIdentity,
     non_stored: Vec<String>,
+    unpack_bytes: u64,
 }
 
 #[tauri::command]
@@ -3123,6 +3191,7 @@ fn scan_firmware_zip(path: String, csc_mode: String) -> Result<ZipScanResult, St
         packages: plan.packages,
         identity,
         non_stored: plan.non_stored,
+        unpack_bytes: plan.unpack_size,
     })
 }
 
@@ -4168,6 +4237,41 @@ mod tests {
             std::fs::metadata(&zip_path).unwrap().len()
         );
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn compressed_zip_packages_are_unpacked_into_flash_sources() {
+        let directory = temp_test_dir("gui-zip-unpack");
+        fs::create_dir_all(&directory).unwrap();
+        let zip_path = directory.join("firmware.zip");
+        let ap = tar_md5_bytes("AP_S931B_t.tar.md5", &[("persist.img", b"payload")]);
+        write_firmware_zip(
+            &zip_path,
+            &[("AP_S931B_t.tar.md5", &ap, zip::CompressionMethod::Deflated)],
+        );
+
+        let mut plan = scan_zip_flash_plan(zip_path.to_str().unwrap(), "home").unwrap();
+        assert!(plan.sources.is_empty());
+        let workspace = unpack_compressed_zip_sources(zip_path.to_str().unwrap(), &mut plan)
+            .unwrap()
+            .expect("compressed package creates a workspace");
+        assert_eq!(plan.sources.len(), 1);
+        let source = &plan.sources[0];
+        assert_eq!(source.base_offset, 0);
+        assert_eq!(source.size, ap.len() as u64);
+        let mut extracted = Vec::new();
+        source
+            .file
+            .as_ref()
+            .try_clone()
+            .unwrap()
+            .read_to_end(&mut extracted)
+            .unwrap();
+        assert_eq!(extracted, ap);
+
+        drop(plan);
+        drop(workspace);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

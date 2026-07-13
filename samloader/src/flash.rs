@@ -18,7 +18,7 @@ use crate::{
     FolderPackages, PartitionArg, print_error, select_zip_packages, validate_package_selection,
 };
 use memmap2::{Mmap, MmapOptions};
-use samloader_fus::list_firmware_zip_entries;
+use samloader_fus::{extract_firmware_zip_entries, list_firmware_zip_entries};
 use samloader_odin::{
     FirmwareFile, FirmwareInfo, FirmwareLz4File, Lz4FrameHeader, OdinManager, UsbBackendOption,
     create_backend, validate_firmware_plan, verify_md5_footer,
@@ -30,6 +30,7 @@ use std::io::{Cursor, Read};
 use std::path::Path;
 use std::sync::Arc;
 use tar::Archive;
+use tempfile::TempDir;
 
 struct IndexedEntry {
     original_name: String,
@@ -136,7 +137,7 @@ fn tar_sources_from_paths(packages: &[String]) -> Result<Vec<TarSource>, i32> {
 fn tar_sources_from_zip(
     zip_path: &str,
     csc_mode: &str,
-) -> Result<(Vec<TarSource>, FolderPackages), i32> {
+) -> Result<(Vec<TarSource>, FolderPackages, Option<TempDir>), i32> {
     let file = match File::open(zip_path) {
         Ok(f) => f,
         Err(e) => {
@@ -179,6 +180,38 @@ fn tar_sources_from_zip(
     let mut member_names = Vec::new();
     selected.append_to(&mut member_names);
 
+    let compressed: Vec<String> = member_names
+        .iter()
+        .filter(|member| {
+            !entries
+                .iter()
+                .find(|entry| &entry.name == *member)
+                .expect("selected members always come from the entry list")
+                .is_stored
+        })
+        .cloned()
+        .collect();
+    let workspace = if compressed.is_empty() {
+        None
+    } else {
+        let parent = Path::new(zip_path)
+            .parent()
+            .unwrap_or_else(|| Path::new("."));
+        let workspace = tempfile::Builder::new()
+            .prefix(".samloader-flash-")
+            .tempdir_in(parent)
+            .or_else(|_| tempfile::tempdir())
+            .map_err(|error| {
+                print_error!("Failed to create temporary ZIP workspace: {}", error);
+                1
+            })?;
+        if let Err(error) = extract_firmware_zip_entries(&file, &compressed, workspace.path()) {
+            print_error!("Failed to unpack selected firmware packages: {}", error);
+            return Err(1);
+        }
+        Some(workspace)
+    };
+
     let file = Arc::new(file);
     let mut sources = Vec::new();
     for member in &member_names {
@@ -187,12 +220,30 @@ fn tar_sources_from_zip(
             .find(|entry| &entry.name == member)
             .expect("selected members always come from the entry list");
         if !entry.is_stored {
-            print_error!(
-                "\"{}\" is compressed inside the ZIP archive and cannot be flashed in place. Extract \"{}\" and flash the extracted folder instead.",
-                member,
-                zip_path
-            );
-            return Err(1);
+            let path = workspace
+                .as_ref()
+                .expect("compressed members create a workspace")
+                .path()
+                .join(member);
+            let extracted = match File::open(&path) {
+                Ok(file) => file,
+                Err(error) => {
+                    print_error!(
+                        "Failed to open unpacked ZIP member \"{}\": {}",
+                        member,
+                        error
+                    );
+                    return Err(1);
+                }
+            };
+            sources.push(TarSource {
+                display_name: format!("{member} (in {zip_path})"),
+                file: Arc::new(extracted),
+                base_offset: 0,
+                size: entry.size,
+                verify_md5: member.to_lowercase().ends_with(".md5"),
+            });
+            continue;
         }
         if entry.size == 0 {
             print_error!("ZIP member \"{}\" is empty.", member);
@@ -219,7 +270,7 @@ fn tar_sources_from_zip(
             verify_md5: member.to_lowercase().ends_with(".md5"),
         });
     }
-    Ok((sources, selected))
+    Ok((sources, selected, workspace))
 }
 
 fn scan_tar_packages(
@@ -979,15 +1030,18 @@ pub(crate) fn action_flash(
 
     let mut resolved_entries = Vec::new();
     let mut packaged_pit = None;
+    // Retain extracted files while their memory mappings are used by the flash.
+    let mut _zip_workspace: Option<TempDir> = None;
     if let Some(zip_path) = zip {
         if !package_selection.is_empty() {
             print_error!("Choose either --zip or explicit package slots, not both.");
             return 1;
         }
-        let (sources, selected) = match tar_sources_from_zip(zip_path, csc_mode) {
+        let (sources, selected, workspace) = match tar_sources_from_zip(zip_path, csc_mode) {
             Ok(result) => result,
             Err(code) => return code,
         };
+        _zip_workspace = workspace;
         if let Err(error) = validate_package_selection(&selected, csc_mode, repartition) {
             print_error!("{}", error);
             return 1;
@@ -1800,7 +1854,8 @@ mod tests {
             ],
         );
 
-        let (sources, selected) = tar_sources_from_zip(zip_path.to_str().unwrap(), "home").unwrap();
+        let (sources, selected, _workspace) =
+            tar_sources_from_zip(zip_path.to_str().unwrap(), "home").unwrap();
         assert_eq!(selected.ap.as_deref(), Some("AP_S931B_test.tar.md5"));
         assert_eq!(sources.len(), 2);
 
@@ -1852,7 +1907,7 @@ mod tests {
     }
 
     #[test]
-    fn deflated_zip_member_fails_closed_before_scanning() {
+    fn deflated_zip_member_is_unpacked_for_scanning() {
         let directory = temp_test_dir("zip-deflated");
         let zip_path = directory.join("firmware.zip");
         let ap = tar_md5_bytes("AP_test.tar.md5", &[("persist.img", b"x")]);
@@ -1860,7 +1915,16 @@ mod tests {
             &zip_path,
             &[("AP_test.tar.md5", &ap, zip::CompressionMethod::Deflated)],
         );
-        assert!(tar_sources_from_zip(zip_path.to_str().unwrap(), "home").is_err());
+        let (sources, _, workspace) =
+            tar_sources_from_zip(zip_path.to_str().unwrap(), "home").unwrap();
+        assert_eq!(sources.len(), 1);
+        assert!(workspace.is_some());
+        let (entries, _) = scan_tar_sources(&sources, false).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].original_name, "persist.img");
+        drop(entries);
+        drop(sources);
+        drop(workspace);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1881,7 +1945,8 @@ mod tests {
             &zip_path,
             &[("AP_test.tar.md5", &ap, zip::CompressionMethod::Stored)],
         );
-        let (sources, _) = tar_sources_from_zip(zip_path.to_str().unwrap(), "home").unwrap();
+        let (sources, _, _workspace) =
+            tar_sources_from_zip(zip_path.to_str().unwrap(), "home").unwrap();
         assert!(scan_tar_sources(&sources, false).is_err());
         fs::remove_dir_all(directory).unwrap();
     }

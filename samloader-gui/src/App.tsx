@@ -167,6 +167,7 @@ export type ZipScanResult = {
   packages: FolderPackages;
   identity: PackageIdentity;
   nonStored: string[];
+  unpackBytes: number;
 };
 
 type DeviceStatus = {
@@ -300,7 +301,7 @@ export const packagesForFlashRequest = (folderMode: boolean, packages: FolderPac
 // place. Non-zip modes are unaffected.
 export function zipReviewValid(mode: FlashMode, zipScan: ZipScanResult | null): boolean {
   if (mode !== "zip") return true;
-  return zipScan !== null && zipScan.nonStored.length === 0;
+  return zipScan !== null;
 }
 
 export const isRegularCscPackage = (path?: string | null) => {
@@ -1494,7 +1495,7 @@ export function App() {
                       </div>
                       {cscMode === "wipe" && <div className="warning-row"><Warning /> Regular CSC will factory reset the device.</div>}
                       {zipScan && zipScan.nonStored.length > 0 && (
-                        <div className="inline-error" role="alert"><WarningOctagon /> {zipScan.nonStored.join(", ")} is compressed inside this ZIP. Extract the ZIP and use Firmware folder mode instead.</div>
+                        <div className="warning-row"><WarningOctagon /> {zipScan.nonStored.length} selected package{zipScan.nonStored.length === 1 ? " is" : "s are"} compressed and will be unpacked automatically before flashing ({fmtBytes(zipScan.unpackBytes)} temporary space).</div>
                       )}
                     </Card>
                   ) : (
@@ -1832,9 +1833,6 @@ export function flashReadinessMessage(
     if (!zipChosen) return "Choose a firmware ZIP.";
     if (scanning) return "Wait for the firmware ZIP scan to finish.";
     if (zipScan === null) return "Scan the ZIP to review its packages.";
-    if (zipScan.nonStored.length > 0) {
-      return `${zipScan.nonStored.join(", ")} is compressed inside this ZIP. Extract the ZIP and use Firmware folder mode instead.`;
-    }
   } else {
     if (scanning) return "Wait for the firmware folder scan to finish.";
     if (selectedCount === 0) return "Select at least one firmware package.";
